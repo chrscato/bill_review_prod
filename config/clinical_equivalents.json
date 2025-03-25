@@ -1,0 +1,138 @@
+{
+  "equivalent_groups": [
+    {
+      "name": "CT Abdomen/Pelvis",
+      "codes": ["74176", "74177", "74178"],
+      "description": "Any of these codes can represent a CT of the abdomen and pelvis"
+    },
+    {
+      "name": "CT Chest",
+      "codes": ["71250", "71260", "71270"],
+      "description": "CT of the chest with various contrast options"
+    },
+    {
+      "name": "MRI Brain",
+      "codes": ["70551", "70552", "70553"],
+      "description": "MRI of the brain with various contrast options"
+    },
+    {
+      "name": "MRI Neck",
+      "codes": ["70540", "70542", "70543"],
+      "description": "MRI of the neck with various contrast options"
+    },
+    {
+      "name": "MRI Cervical Spine",
+      "codes": ["72141", "72142", "72156"],
+      "description": "MRI of the cervical spine with various contrast options"
+    },
+    {
+      "name": "MRI Thoracic Spine",
+      "codes": ["72146", "72147", "72157"],
+      "description": "MRI of the thoracic spine with various contrast options"
+    },
+    {
+      "name": "MRI Lumbar Spine",
+      "codes": ["72148", "72149", "72158"],
+      "description": "MRI of the lumbar spine with various contrast options"
+    },
+    {
+      "name": "MRI Upper Extremity Joint",
+      "codes": ["73221", "73222", "73223"],
+      "description": "MRI of an upper extremity joint (shoulder, elbow, wrist) with various contrast options"
+    },
+    {
+      "name": "MRI Lower Extremity Joint",
+      "codes": ["73721", "73722", "73723"],
+      "description": "MRI of a lower extremity joint (hip, knee, ankle) with various contrast options"
+    },
+    {
+      "name": "MRI Upper Extremity Non-Joint",
+      "codes": ["73218", "73219", "73220"],
+      "description": "MRI of upper extremity non-joint (arm, forearm, hand) with various contrast options"
+    },
+    {
+      "name": "MRI Lower Extremity Non-Joint",
+      "codes": ["73718", "73719", "73720"],
+      "description": "MRI of lower extremity non-joint (thigh, calf, foot) with various contrast options"
+    },
+    {
+      "name": "Therapeutic Joint Injection Large",
+      "codes": ["20610", "20611"],
+      "description": "Therapeutic injection of large joint, with or without ultrasound guidance"
+    },
+    {
+      "name": "Therapeutic Joint Injection Medium",
+      "codes": ["20605", "20606"],
+      "description": "Therapeutic injection of medium joint, with or without ultrasound guidance"
+    },
+    {
+      "name": "Therapeutic Joint Injection Small",
+      "codes": ["20600", "20604"],
+      "description": "Therapeutic injection of small joint, with or without ultrasound guidance"
+    },
+    {
+      "name": "EMG Limited Nerve Conduction",
+      "codes": ["95907", "95908", "95909"],
+      "description": "EMG nerve conduction studies for limited tests (1-6 studies)"
+    },
+    {
+      "name": "EMG Comprehensive Nerve Conduction",
+      "codes": ["95910", "95911", "95912", "95913"],
+      "description": "EMG nerve conduction studies for comprehensive tests (7+ studies)"
+    },
+    {
+      "name": "EMG Needle Limited",
+      "codes": ["95885", "95887"],
+      "description": "EMG needle studies, limited"
+    },
+    {
+      "name": "EMG Needle Complete",
+      "codes": ["95886"],
+      "description": "EMG needle studies, complete"
+    }
+  ],
+  "clinical_substitutes": [
+    {
+      "name": "Shoulder MRI Arthrogram Alternatives",
+      "primary_codes": ["73222", "23350", "77002"],
+      "substitute_codes": ["73221"],
+      "description": "A regular shoulder MRI can be substituted for an arthrogram in certain clinical scenarios"
+    },
+    {
+      "name": "Knee MRI Arthrogram Alternatives",
+      "primary_codes": ["73722", "27370", "77002"],
+      "substitute_codes": ["73721"],
+      "description": "A regular knee MRI can be substituted for an arthrogram in certain clinical scenarios"
+    },
+    {
+      "name": "CT for MRI Alternatives",
+      "primary_codes": ["70553", "72156", "72157", "72158", "73223", "73723"],
+      "substitute_codes": ["70470", "72127", "72130", "72133", "73202", "73702"],
+      "description": "CT may be substituted for MRI when MRI is contraindicated (pacemaker, implants, etc.)"
+    },
+    {
+      "name": "Open vs. Closed MRI",
+      "primary_codes": ["70553", "72156", "72157", "72158", "73221", "73721"],
+      "substitute_codes": ["S8042"],
+      "description": "Open MRI may be substituted for standard MRI for claustrophobic patients"
+    }
+  ],
+  "provider_specific_equivalents": {
+    "123456789": [
+      {
+        "name": "Provider-Specific MRI Brain",
+        "primary_codes": ["70553"],
+        "substitute_codes": ["70551", "70552"],
+        "description": "This provider uses different protocols for brain MRIs"
+      }
+    ],
+    "987654321": [
+      {
+        "name": "Provider-Specific Joint Injections",
+        "primary_codes": ["20610", "77002"],
+        "substitute_codes": ["20611"],
+        "description": "This provider uses ultrasound guidance instead of fluoroscopic guidance"
+      }
+    ]
+  }
+}
