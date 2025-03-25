@@ -1,3 +1,117 @@
-{ 
-  "placeholder": "This will be filled with provider-specific rules" 
-} 
+{
+  "provider_specific_settings": {
+    "123456789": {
+      "name": "Example Imaging Center",
+      "bundle_rates": {
+        "MR Arthrogram Shoulder": 800.00,
+        "CT Arthrogram Shoulder": 750.00,
+        "MR Arthrogram Hip": 850.00,
+        "MR Arthrogram Knee": 825.00,
+        "EMG Visit Standard": 625.00,
+        "EMG Visit Comprehensive": 825.00
+      },
+      "modifier_rules": {
+        "73222": {
+          "required": ["RT", "LT"],
+          "incompatible": ["50"]
+        },
+        "73721": {
+          "required": ["RT", "LT"],
+          "incompatible": ["50"]
+        }
+      },
+      "unit_rules": {
+        "95886": 2,
+        "95885": 2
+      }
+    },
+    "987654321": {
+      "name": "ABC Medical Group",
+      "bundle_rates": {
+        "MR Arthrogram Shoulder": 850.00,
+        "CT Arthrogram Shoulder": 775.00,
+        "MR Arthrogram Hip": 875.00,
+        "MR Arthrogram Knee": 850.00,
+        "Therapeutic Injection Shoulder": 325.00,
+        "Therapeutic Injection Knee": 325.00
+      },
+      "modifier_rules": {
+        "20610": {
+          "required": [],
+          "allowed": ["RT", "LT", "50"]
+        }
+      },
+      "unit_rules": {
+        "20610": 1
+      }
+    }
+  },
+  "network_rules": {
+    "in-network": {
+      "bundle_rates": {
+        "MR Arthrogram Shoulder": 750.00,
+        "CT Arthrogram Shoulder": 700.00,
+        "MR Arthrogram Hip": 800.00,
+        "MR Arthrogram Knee": 775.00,
+        "EMG Visit Standard": 600.00,
+        "EMG Visit Comprehensive": 800.00,
+        "Therapeutic Injection Shoulder": 300.00,
+        "Therapeutic Injection Knee": 300.00
+      }
+    },
+    "out-of-network": {
+      "bundle_rates": {
+        "MR Arthrogram Shoulder": 950.00,
+        "CT Arthrogram Shoulder": 900.00,
+        "MR Arthrogram Hip": 1000.00,
+        "MR Arthrogram Knee": 975.00,
+        "EMG Visit Standard": 800.00,
+        "EMG Visit Comprehensive": 1000.00,
+        "Therapeutic Injection Shoulder": 400.00,
+        "Therapeutic Injection Knee": 400.00
+      }
+    }
+  },
+  "default_bundle_rates": {
+    "MR Arthrogram Shoulder": 800.00,
+    "CT Arthrogram Shoulder": 750.00,
+    "XR Arthrogram Shoulder": 500.00,
+    "MR Arthrogram Hip": 850.00,
+    "CT Arthrogram Hip": 800.00,
+    "XR Arthrogram Hip": 525.00,
+    "MR Arthrogram Knee": 825.00,
+    "CT Arthrogram Knee": 775.00,
+    "XR Arthrogram Knee": 525.00,
+    "MR Arthrogram Wrist": 750.00,
+    "CT Arthrogram Wrist": 700.00,
+    "XR Arthrogram Wrist": 475.00,
+    "MR Arthrogram Elbow": 750.00,
+    "MR Arthrogram Ankle": 775.00,
+    "Therapeutic Injection Shoulder": 350.00,
+    "Therapeutic Injection Hip": 350.00,
+    "Therapeutic Injection Knee": 350.00,
+    "Therapeutic Injection Wrist": 325.00,
+    "Therapeutic Injection Elbow": 325.00,
+    "Therapeutic Injection Ankle": 325.00,
+    "EMG Visit Standard": 650.00,
+    "EMG Visit Limited": 550.00,
+    "EMG Visit Comprehensive": 850.00,
+    "EMG Visit Minimal": 450.00,
+    "CT Chest Abdomen Pelvis": 900.00,
+    "CT Urogram": 800.00,
+    "MRI Cholangiogram": 850.00
+  },
+  "modifier_exceptions": {
+    "modifiers": {
+      "TC": ["73721", "73722", "73723", "73201", "73202", "73220", "70551", "70553"],
+      "26": ["73721", "73722", "73723", "73201", "73202", "73220", "70551", "70553"]
+    }
+  },
+  "clinical_intent_rules": {
+    "relaxed_matching": {
+      "MRI": ["CT", "MRA", "MRI"],
+      "Arthrogram": ["MRI", "CT", "XR"],
+      "EMG": ["EMG", "NCS", "Electrodiagnosis"]
+    }
+  }
+}
