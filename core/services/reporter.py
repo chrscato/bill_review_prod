@@ -270,13 +270,23 @@ class ValidationReporter:
         detailed_json_path = self.log_dir / f"validation_detailed_{self.timestamp}.json"
         summary_json_path = self.log_dir / f"validation_summary_{self.timestamp}.json"
         
+        # Helper function to convert non-JSON serializable objects
+        def json_serializable_converter(obj):
+            if isinstance(obj, set):
+                return list(obj)
+            elif hasattr(obj, 'to_dict'):
+                return obj.to_dict()
+            elif hasattr(obj, '__dict__'):
+                return obj.__dict__
+            raise TypeError(f"Object of type {type(obj)} is not JSON serializable")
+        
         # Save detailed results
         with open(detailed_json_path, 'w', encoding='utf-8') as f:
-            json.dump(self.detailed_results, f, indent=2)
+            json.dump(self.detailed_results, f, indent=2, default=json_serializable_converter)
         
         # Save summary
         with open(summary_json_path, 'w', encoding='utf-8') as f:
-            json.dump(self.summary, f, indent=2)
+            json.dump(self.summary, f, indent=2, default=json_serializable_converter)
         
         report_paths = {
             "detailed_json": str(detailed_json_path),

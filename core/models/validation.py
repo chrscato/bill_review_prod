@@ -1,6 +1,6 @@
 # Validation data models 
 # core/models/validation.py
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Dict, List, Any, Optional
 from datetime import datetime
 
@@ -21,23 +21,22 @@ class ValidationResult:
     Result of a validation operation.
     Contains detailed information about the validation outcome.
     """
-    # Basic identification information
     file_name: str
     timestamp: str
+    status: str  # "PASS" or "FAIL"
+    validation_type: str  # The type of validation performed (e.g., "bundle", "rate", "modifier")
+    
+    # Optional fields with default values
     patient_name: Optional[str] = None
     date_of_service: Optional[str] = None
     order_id: Optional[str] = None
     
-    # Validation outcome
-    status: str  # "PASS" or "FAIL"
-    validation_type: str  # The type of validation performed (e.g., "bundle", "rate", "modifier")
-    
     # Detailed validation information
-    details: Dict[str, Any]  # Structured details about the validation
-    messages: List[str]  # Human-readable messages about the validation outcome
+    details: Dict[str, Any] = field(default_factory=dict)
+    messages: List[str] = field(default_factory=list)
     
     # Source data for reference
-    source_data: Dict[str, Any]
+    source_data: Dict[str, Any] = field(default_factory=dict)
     
     @classmethod
     def create_base_result(cls, file_path: str) -> Dict:
@@ -88,11 +87,7 @@ class ValidationSession:
     session_id: str
     start_time: datetime
     end_time: Optional[datetime] = None
-    results: List[ValidationResult] = None
-    
-    def __post_init__(self):
-        if self.results is None:
-            self.results = []
+    results: List[ValidationResult] = field(default_factory=list)
     
     def add_result(self, result: ValidationResult) -> None:
         """
