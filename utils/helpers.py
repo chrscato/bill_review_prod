@@ -5,6 +5,7 @@ import re
 import json
 from datetime import datetime
 from pathlib import Path
+import logging
 
 def clean_tin(tin: Any) -> Optional[str]:
     """
@@ -149,7 +150,8 @@ def load_json_file(file_path: Union[str, Path]) -> Dict:
         with open(file_path, 'r', encoding='utf-8') as f:
             return json.load(f)
     except (IOError, json.JSONDecodeError) as e:
-        print(f"Error loading JSON file {file_path}: {e}")
+        logger = logging.getLogger(__name__)
+        logger.error(f"Error loading JSON file {file_path}: {e}")
         return {}
 
 def save_json_file(data: Any, file_path: Union[str, Path], indent: int = 2) -> bool:

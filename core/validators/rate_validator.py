@@ -3,6 +3,7 @@ from typing import Dict, List, Set, Optional, Tuple
 import pandas as pd
 import sqlite3
 from utils.helpers import clean_tin, safe_int
+import logging
 
 class RateValidator:
     """
@@ -19,6 +20,7 @@ class RateValidator:
         """
         self.conn = conn
         self.bundle_rates = {}
+        self.logger = logging.getLogger(__name__)
         
         # Load bundle rates if provided
         if bundle_rates_path:
@@ -121,100 +123,97 @@ class RateValidator:
                 break
         
         # BUNDLE RATE HANDLING
-        if bundle_name and bundle_type:
-            print(f"Processing bundled rate for {bundle_name} ({bundle_type})")
-            
-            # Try to get bundle rate first
-            bundle_rate = self.get_bundle_rate(bundle_name, clean_provider_tin, provider_network)
-            
-            if bundle_rate is not None:
-                # We have a specific bundle rate, use it for all bundle components
-                for line in hcfa_lines:
-                    cpt = str(line.get('cpt', ''))
-                    units = safe_int(line.get('units', 1))
-                    
-                    # Check if this CPT is part of the bundle
-                    is_bundle_component = (
-                        line.get("bundle_type") == bundle_type and 
-                        line.get("bundle_name") == bundle_name
-                    )
-                    
-                    if is_bundle_component:
-                        # This is a bundle component, use proportional bundle rate
-                        # Each component gets marked as bundle rate with 0.00 except the primary one
-                        if 'primary_component' in line and line['primary_component']:
-                            # Primary component gets the full bundle rate
-                            unit_adjusted_rate = bundle_rate
-                            rate_source = "Bundle Rate (Primary)"
-                        else:
-                            # Non-primary components get 0.00 rate (already included in bundle)
-                            unit_adjusted_rate = 0.00
-                            rate_source = "Bundle Rate (Included)"
-                        
-                        result = {
-                            **line, 
-                            "status": "PASS", 
-                            "base_rate": unit_adjusted_rate,
-                            "unit_adjusted_rate": unit_adjusted_rate,
-                            "units": units,
-                            "rate_source": rate_source,
-                            "validated_rate": unit_adjusted_rate,
-                            "is_bundled": True,
-                            "bundle_name": bundle_name
-                        }
-                        rate_results.append(result)
-                        
-                        # Only count the primary component in the total
-                        if 'primary_component' in line and line['primary_component']:
-                            total_rate += unit_adjusted_rate
-                            rate_sources[rate_source] = rate_sources.get(rate_source, 0) + 1
-                    else:
-                        # Not a bundle component, validate normally
-                        self._validate_individual_rate(
-                            line, 
-                            clean_provider_tin, 
-                            provider_network, 
-                            proc_categories,
-                            total_rate, 
-                            rate_sources, 
-                            rate_results
-                        )
-                
-                # Return results for bundle rate
-                return {
-                    "status": "PASS",
-                    "results": rate_results,
-                    "total_rate": total_rate,
-                    "provider_details": provider_details,
-                    "bundle_name": bundle_name,
-                    "bundle_type": bundle_type, 
-                    "messages": [f"Bundle rate validated successfully: ${bundle_rate:.2f} for {bundle_name}"]
-                }
-            else:
-                # No specific bundle rate, use component-based validation
-                print(f"No bundle rate found for {bundle_name}, using component rates")
+        bundle_rate = self.get_bundle_rate(bundle_name, clean_provider_tin, provider_network)
         
-        # COMPONENT-BASED RATE VALIDATION
-        # If we're here, either it's not a bundle or we don't have a bundle rate
-        for line in hcfa_lines:
-            component_result = self._validate_individual_rate(
-                line, 
-                clean_provider_tin, 
-                provider_network, 
-                proc_categories,
-                total_rate, 
-                rate_sources, 
-                rate_results
-            )
+        # Log bundle rate processing
+        if bundle_name and bundle_type:
+            self.logger.info(f"Processing bundled rate for {bundle_name} ({bundle_type})")
+            if bundle_rate is None:
+                self.logger.info(f"No bundle rate found for {bundle_name}, using component rates")
+        
+        if bundle_name and bundle_type:
+            for line in hcfa_lines:
+                cpt = str(line.get('cpt', ''))
+                units = safe_int(line.get('units', 1))
+                
+                # Check if this CPT is part of the bundle
+                is_bundle_component = (
+                    line.get("bundle_type") == bundle_type and 
+                    line.get("bundle_name") == bundle_name
+                )
+                
+                if is_bundle_component:
+                    # This is a bundle component, use proportional bundle rate
+                    # Each component gets marked as bundle rate with 0.00 except the primary one
+                    if 'primary_component' in line and line['primary_component']:
+                        # Primary component gets the full bundle rate
+                        unit_adjusted_rate = bundle_rate
+                        rate_source = "Bundle Rate (Primary)"
+                    else:
+                        # Non-primary components get 0.00 rate (already included in bundle)
+                        unit_adjusted_rate = 0.00
+                        rate_source = "Bundle Rate (Included)"
+                    
+                    result = {
+                        **line, 
+                        "status": "PASS", 
+                        "base_rate": unit_adjusted_rate,
+                        "unit_adjusted_rate": unit_adjusted_rate,
+                        "units": units,
+                        "rate_source": rate_source,
+                        "validated_rate": unit_adjusted_rate,
+                        "is_bundled": True,
+                        "bundle_name": bundle_name
+                    }
+                    rate_results.append(result)
+                    
+                    # Only count the primary component in the total
+                    if 'primary_component' in line and line['primary_component']:
+                        total_rate += unit_adjusted_rate
+                        rate_sources[rate_source] = rate_sources.get(rate_source, 0) + 1
+                else:
+                    # Not a bundle component, validate normally
+                    self._validate_individual_rate(
+                        line, 
+                        clean_provider_tin, 
+                        provider_network, 
+                        proc_categories,
+                        total_rate, 
+                        rate_sources, 
+                        rate_results
+                    )
             
-            total_rate += component_result.get('unit_adjusted_rate', 0) if component_result.get('status') == 'PASS' else 0
-            if component_result.get('status') == 'FAIL':
-                has_any_failure = True
-            
-            # Track rate sources for reporting
-            if component_result.get('status') == 'PASS':
-                rate_source = component_result.get('rate_source', 'Unknown')
-                rate_sources[rate_source] = rate_sources.get(rate_source, 0) + 1
+            # Return results for bundle rate
+            return {
+                "status": "PASS",
+                "results": rate_results,
+                "total_rate": total_rate,
+                "provider_details": provider_details,
+                "bundle_name": bundle_name,
+                "bundle_type": bundle_type, 
+                "messages": [f"Bundle rate validated successfully: ${bundle_rate:.2f} for {bundle_name}"]
+            }
+        else:
+            # COMPONENT-BASED RATE VALIDATION
+            for line in hcfa_lines:
+                component_result = self._validate_individual_rate(
+                    line, 
+                    clean_provider_tin, 
+                    provider_network, 
+                    proc_categories,
+                    total_rate, 
+                    rate_sources, 
+                    rate_results
+                )
+                
+                total_rate += component_result.get('unit_adjusted_rate', 0) if component_result.get('status') == 'PASS' else 0
+                if component_result.get('status') == 'FAIL':
+                    has_any_failure = True
+                
+                # Track rate sources for reporting
+                if component_result.get('status') == 'PASS':
+                    rate_source = component_result.get('rate_source', 'Unknown')
+                    rate_sources[rate_source] = rate_sources.get(rate_source, 0) + 1
 
         # Determine final rate validation status
         has_failures = any(r.get("status") == "FAIL" for r in rate_results)

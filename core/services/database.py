@@ -7,6 +7,7 @@ from pathlib import Path
 import json
 from datetime import datetime
 from config.settings import settings
+import logging
 
 class DatabaseService:
     """
@@ -23,6 +24,7 @@ class DatabaseService:
         """
         self.db_path = db_path or settings.DB_PATH
         self._cache = {}  # Simple cache for frequently accessed data
+        self.logger = logging.getLogger(__name__)
         
     def connect_db(self) -> sqlite3.Connection:
         """
@@ -67,11 +69,11 @@ class DatabaseService:
             
             # Add enhanced error handling
             if df.empty:
-                print(f"Warning: No line items found for Order_ID: {order_id}")
+                self.logger.warning(f"No line items found for Order_ID: {order_id}")
                 
             return df
         except Exception as e:
-            print(f"Error getting line items for Order_ID {order_id}: {str(e)}")
+            self.logger.error(f"Error getting line items for Order_ID {order_id}: {str(e)}")
             # Return empty DataFrame with expected columns
             return pd.DataFrame(columns=['id', 'Order_ID', 'DOS', 'CPT', 'Modifier', 'Units', 'Description'])
         finally:
@@ -129,7 +131,7 @@ class DatabaseService:
             df = pd.read_sql_query(query, conn, params=[order_id])
             
             if df.empty:
-                print(f"Warning: No provider details found for Order_ID: {order_id}")
+                self.logger.warning(f"No provider details found for Order_ID: {order_id}")
                 return None
                 
             # Convert first row to dictionary
@@ -140,7 +142,7 @@ class DatabaseService:
             
             return provider_details
         except Exception as e:
-            print(f"Error getting provider details for Order_ID {order_id}: {str(e)}")
+            self.logger.error(f"Error getting provider details for Order_ID {order_id}: {str(e)}")
             return None
         finally:
             # Close connection if we created it
@@ -197,7 +199,7 @@ class DatabaseService:
                             results[table_name] = {}
                             
                 except Exception as e:
-                    print(f"Error executing query for {table_name}: {str(e)}")
+                    self.logger.error(f"Error executing query for {table_name}: {str(e)}")
                     # Provide appropriate empty structure based on query type
                     if table_name == "line_items":
                         results[table_name] = []
@@ -206,7 +208,7 @@ class DatabaseService:
             
             return results
         except Exception as e:
-            print(f"Error getting full details for Order_ID {order_id}: {str(e)}")
+            self.logger.error(f"Error getting full details for Order_ID {order_id}: {str(e)}")
             # Return a structured empty result
             return {
                 "order_details": {},
@@ -246,7 +248,7 @@ class DatabaseService:
             # Check if bundle_type is not null/NaN
             return pd.notna(df['bundle_type'].iloc[0]) and df['bundle_type'].iloc[0] != ''
         except Exception as e:
-            print(f"Error checking bundle for Order_ID {order_id}: {str(e)}")
+            self.logger.error(f"Error checking bundle for Order_ID {order_id}: {str(e)}")
             return False
         finally:
             # Close connection if we created it
@@ -294,7 +296,7 @@ class DatabaseService:
                     
             return categories
         except Exception as e:
-            print(f"Error getting procedure categories: {str(e)}")
+            self.logger.error(f"Error getting procedure categories: {str(e)}")
             # Return a minimal valid result
             return {cpt: None for cpt in cpt_codes}
         finally:
@@ -346,7 +348,7 @@ class DatabaseService:
                 
             return rates
         except Exception as e:
-            print(f"Error getting PPO rates for TIN {provider_tin}: {str(e)}")
+            self.logger.error(f"Error getting PPO rates for TIN {provider_tin}: {str(e)}")
             return {}
         finally:
             # Close connection if we created it
@@ -396,7 +398,7 @@ class DatabaseService:
                 
             return rates
         except Exception as e:
-            print(f"Error getting OTA rates for Order ID {order_id}: {str(e)}")
+            self.logger.error(f"Error getting OTA rates for Order ID {order_id}: {str(e)}")
             return {}
         finally:
             # Close connection if we created it
@@ -447,7 +449,7 @@ class DatabaseService:
             
             return bundle_info
         except Exception as e:
-            print(f"Error getting bundle info for Order ID {order_id}: {str(e)}")
+            self.logger.error(f"Error getting bundle info for Order ID {order_id}: {str(e)}")
             return None
         finally:
             # Close connection if we created it
@@ -500,7 +502,7 @@ class DatabaseService:
             conn.commit()
             return True
         except Exception as e:
-            print(f"Error saving validation result: {str(e)}")
+            self.logger.error(f"Error saving validation result: {str(e)}")
             return False
         finally:
             # Close connection if we created it
@@ -541,7 +543,7 @@ class DatabaseService:
             
             return ancillary_codes
         except Exception as e:
-            print(f"Error getting ancillary codes: {str(e)}")
+            self.logger.error(f"Error getting ancillary codes: {str(e)}")
             return set()
         finally:
             # Close connection if we created it
@@ -579,7 +581,7 @@ class DatabaseService:
             
             return df
         except Exception as e:
-            print(f"Error getting dim_proc table: {str(e)}")
+            self.logger.error(f"Error getting dim_proc table: {str(e)}")
             return pd.DataFrame()
         finally:
             # Close connection if we created it
@@ -650,7 +652,7 @@ class DatabaseService:
                 
             return df
         except Exception as e:
-            print(f"Error getting validation failures: {str(e)}")
+            self.logger.error(f"Error getting validation failures: {str(e)}")
             return pd.DataFrame()
         finally:
             # Close connection if we created it
@@ -730,7 +732,7 @@ class DatabaseService:
                 
             return summary
         except Exception as e:
-            print(f"Error getting validation summary: {str(e)}")
+            self.logger.error(f"Error getting validation summary: {str(e)}")
             return {"total": 0, "by_status": {}, "by_validation_type": {}}
         finally:
             # Close connection if we created it

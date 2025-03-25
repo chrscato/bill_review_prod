@@ -278,6 +278,8 @@ class ValidationReporter:
                 return obj.to_dict()
             elif hasattr(obj, '__dict__'):
                 return obj.__dict__
+            elif hasattr(obj, 'item'):  # Handle numpy types
+                return obj.item()
             raise TypeError(f"Object of type {type(obj)} is not JSON serializable")
         
         # Save detailed results

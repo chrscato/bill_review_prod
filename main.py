@@ -68,13 +68,21 @@ class BillReviewApplication:
             hcfa_data = normalize_hcfa_format(raw_hcfa_data)
             order_id = hcfa_data.get('Order_ID')
 
+            if not order_id:
+                raise ValueError("No Order_ID found in HCFA data")
+
             # Load provider & patient details
             provider_info = self.db_service.get_provider_details(order_id, validators['conn'])
+            if not provider_info:
+                raise ValueError(f"No provider details found for Order_ID: {order_id}")
+
             order_info = self.db_service.get_full_details(order_id, validators['conn'])
             patient_info = order_info.get('order_details', {})
             
             # Get order line items for bundle and intent comparison
             order_lines = self.db_service.get_line_items(order_id, validators['conn'])
+            if order_lines.empty:
+                raise ValueError(f"No line items found for Order_ID: {order_id}")
             
             # Convert order line items to dict format for validators
             order_data = {
@@ -110,7 +118,6 @@ class BillReviewApplication:
             non_critical_failures = []
             
             # 1. First check bundle matching
-            print(f"Running bundle validation for {file_path.name}")
             bundle_result = validators['bundle'].validate(order_data, hcfa_data)
             validation_results['bundle'] = bundle_result
             
@@ -135,27 +142,22 @@ class BillReviewApplication:
                             )
             
             # 2. Check clinical intent - understanding the purpose of the procedure
-            print(f"Running clinical intent validation for {file_path.name}")
             intent_result = validators['intent'].validate(order_data, hcfa_data)
             validation_results['intent'] = intent_result
             
             # 3. Check modifiers - not critical for bundles
-            print(f"Running modifier validation for {file_path.name}")
             modifier_result = validators['modifier'].validate(hcfa_data)
             validation_results['modifier'] = modifier_result
             
             # 4. Check units - respecting bundle-specific rules
-            print(f"Running units validation for {file_path.name}")
             units_result = validators['units'].validate(hcfa_data)
             validation_results['units'] = units_result
             
             # 5. Check line items matching
-            print(f"Running line items validation for {file_path.name}")
             line_items_result = validators['line_items'].validate(hcfa_data['line_items'], order_lines)
             validation_results['line_items'] = line_items_result
             
             # 6. Check rates - providing bundle rates if applicable
-            print(f"Running rate validation for {file_path.name}")
             rate_result = validators['rate'].validate(hcfa_data['line_items'], order_id)
             validation_results['rate'] = rate_result
             
@@ -201,24 +203,60 @@ class BillReviewApplication:
             # Create overall validation result
             overall_status = "FAIL" if critical_failures else "PASS"
             
-            # Generate overall messages
+            # Generate overall messages with detailed failure information
             overall_messages = []
             
             if critical_failures:
                 overall_messages.append(f"Validation failed with {len(critical_failures)} critical issues:")
-                for failure_type, message in critical_failures[:3]:
-                    overall_messages.append(f"- {failure_type}: {message}")
-                
-                if len(critical_failures) > 3:
-                    overall_messages.append(f"- ... and {len(critical_failures) - 3} more critical issues")
+                for failure_type, message in critical_failures:
+                    # Get detailed validation result for this type
+                    validator_result = validation_results.get(failure_type, {})
+                    details = validator_result.get('details', {})
+                    
+                    # Add detailed failure information
+                    overall_messages.append(f"\n{failure_type.upper()} Validation Failed:")
+                    overall_messages.append(f"- Message: {message}")
+                    
+                    # Add specific failure details if available
+                    if details:
+                        if 'missing_codes' in details:
+                            overall_messages.append(f"- Missing CPT codes: {', '.join(details['missing_codes'])}")
+                        if 'mismatched_codes' in details:
+                            overall_messages.append(f"- Mismatched CPT codes: {', '.join(details['mismatched_codes'])}")
+                        if 'invalid_modifiers' in details:
+                            overall_messages.append(f"- Invalid modifiers: {', '.join(details['invalid_modifiers'])}")
+                        if 'rate_issues' in details:
+                            overall_messages.append(f"- Rate issues: {details['rate_issues']}")
+                        if 'bundle_issues' in details:
+                            overall_messages.append(f"- Bundle issues: {details['bundle_issues']}")
+                        if 'intent_mismatch' in details:
+                            overall_messages.append(f"- Intent mismatch: {details['intent_mismatch']}")
             
             elif non_critical_failures:
                 overall_messages.append(f"Validation passed with {len(non_critical_failures)} non-critical issues:")
-                for failure_type, message in non_critical_failures[:3]:
-                    overall_messages.append(f"- {failure_type}: {message}")
-                
-                if len(non_critical_failures) > 3:
-                    overall_messages.append(f"- ... and {len(non_critical_failures) - 3} more non-critical issues")
+                for failure_type, message in non_critical_failures:
+                    # Get detailed validation result for this type
+                    validator_result = validation_results.get(failure_type, {})
+                    details = validator_result.get('details', {})
+                    
+                    # Add detailed non-critical issue information
+                    overall_messages.append(f"\n{failure_type.upper()} Non-Critical Issue:")
+                    overall_messages.append(f"- Message: {message}")
+                    
+                    # Add specific issue details if available
+                    if details:
+                        if 'missing_codes' in details:
+                            overall_messages.append(f"- Missing CPT codes: {', '.join(details['missing_codes'])}")
+                        if 'mismatched_codes' in details:
+                            overall_messages.append(f"- Mismatched CPT codes: {', '.join(details['mismatched_codes'])}")
+                        if 'invalid_modifiers' in details:
+                            overall_messages.append(f"- Invalid modifiers: {', '.join(details['invalid_modifiers'])}")
+                        if 'rate_issues' in details:
+                            overall_messages.append(f"- Rate issues: {details['rate_issues']}")
+                        if 'bundle_issues' in details:
+                            overall_messages.append(f"- Bundle issues: {details['bundle_issues']}")
+                        if 'intent_mismatch' in details:
+                            overall_messages.append(f"- Intent mismatch: {details['intent_mismatch']}")
             
             else:
                 overall_messages.append("Validation passed successfully with no issues")
@@ -238,15 +276,26 @@ class BillReviewApplication:
             # Add to reporter for generating reports
             self.reporter.add_result(validation_result.to_dict())
             
+            # Log validation result with status
             print(f"Validation complete for {file_path.name}: {overall_status}")
 
         except Exception as e:
-            # Log any processing errors
+            # Log any processing errors with detailed information
+            error_details = {
+                "error_type": type(e).__name__,
+                "error_message": str(e),
+                "file_path": str(file_path),
+                "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+                "order_id": order_id if 'order_id' in locals() else None,
+                "provider_info": provider_info if 'provider_info' in locals() else None,
+                "has_line_items": not order_lines.empty if 'order_lines' in locals() else False
+            }
+            
             error_result = ValidationResult(
                 **base_result,
                 status="FAIL",
                 validation_type="process_error",
-                details={"error": str(e)},
+                details=error_details,
                 messages=[f"Error processing file: {str(e)}"]
             )
             
@@ -256,7 +305,13 @@ class BillReviewApplication:
             # Add to reporter for generating reports
             self.reporter.add_result(error_result.to_dict())
             
-            print(f"Error processing file {file_path.name}: {str(e)}")
+            # Print detailed error information
+            print(f"\nError processing file {file_path.name}:")
+            print(f"Error Type: {type(e).__name__}")
+            print(f"Message: {str(e)}")
+            if 'order_id' in locals() and order_id:
+                print(f"Order ID: {order_id}")
+            print("----------------------------------------")
 
     def run(self):
         """
@@ -286,11 +341,10 @@ class BillReviewApplication:
             # Find and process all JSON files
             json_files = list(Path(settings.JSON_PATH).glob('*.json'))
             total_files = len(json_files)
-            print(f"Found {total_files} files to process")
+            print(f"Starting validation of {total_files} files...")
 
             # Process each file
             for index, json_file in enumerate(json_files, 1):
-                print(f"Processing file {index}/{total_files}: {json_file.name}")
                 self.process_file(json_file, validators)
 
         # Generate validation reports
@@ -314,11 +368,12 @@ class BillReviewApplication:
             excel_path = self.reporter.export_to_excel()
             report_paths["excel"] = excel_path
         
-        print("\nValidation complete!")
-        print(f"Processed {len(self.validation_results)} files")
+        # Print final summary
+        print("\nValidation Summary:")
+        print(f"Total Files: {len(self.validation_results)}")
         print(f"Pass: {sum(1 for r in self.validation_results if r.status == 'PASS')}")
         print(f"Fail: {sum(1 for r in self.validation_results if r.status == 'FAIL')}")
-        print(f"\nReport files:")
+        print(f"\nReports generated:")
         for report_type, path in report_paths.items():
             print(f"- {report_type}: {path}")
 
