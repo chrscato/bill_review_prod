@@ -1,0 +1,28 @@
+{
+    "patient_info": {
+        "patient_name": "Dustin Rushing",
+        "patient_dob": "08/16/1986",
+        "patient_zip": "32854"
+    },
+    "service_lines": [
+        {
+            "date_of_service": "2025-02-19",
+            "place_of_service": "11",
+            "cpt_code": "73721",
+            "modifiers": [],
+            "diagnosis_pointer": "A",
+            "charge_amount": "2000.00",
+            "units": 1
+        }
+    ],
+    "billing_info": {
+        "billing_provider_name": "Atlantic Radiology Associates",
+        "billing_provider_address": "P.O. Box 116287, Atlanta GA 30368-6287",
+        "billing_provider_tin": "203728202",
+        "billing_provider_npi": "1033136080",
+        "total_charge": "2000.00",
+        "patient_account_no": "203728202"
+    },
+    "Order_ID": "ORD-202522000000-RUSHINGDUS",
+    "filemaker_number": "202522000000"
+}

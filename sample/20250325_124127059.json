@@ -1,0 +1,30 @@
+{
+    "patient_info": {
+        "patient_name": "THACIA AYEE LEWIS",
+        "patient_dob": "04/11/1984",
+        "patient_zip": "30078"
+    },
+    "service_lines": [
+        {
+            "date_of_service": "2025-03-07",
+            "place_of_service": "49",
+            "cpt_code": "73721",
+            "modifiers": [
+                "RT"
+            ],
+            "diagnosis_pointer": "A",
+            "charge_amount": "2225.00",
+            "units": 1
+        }
+    ],
+    "billing_info": {
+        "billing_provider_name": "AMERICAN HEALTH IMAGING OF GEORGIA LLC",
+        "billing_provider_address": "PO BOX 745973, ATLANTA, GA 30374",
+        "billing_provider_tin": "582388975",
+        "billing_provider_npi": "1467437327",
+        "total_charge": "2225.00",
+        "patient_account_no": "1428970"
+    },
+    "Order_ID": "ORD-202522000000-AYEELEWIST",
+    "filemaker_number": "202522000000"
+}

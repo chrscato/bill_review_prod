@@ -1,0 +1,37 @@
+{
+    "patient_info": {
+        "patient_name": "JARED D YORK",
+        "patient_dob": "N/A",
+        "patient_zip": "32854"
+    },
+    "service_lines": [
+        {
+            "date_of_service": "2024-11-15",
+            "place_of_service": "11",
+            "cpt_code": "77003",
+            "modifiers": [],
+            "diagnosis_pointer": "A",
+            "charge_amount": "80.00",
+            "units": 1
+        },
+        {
+            "date_of_service": "2024-11-15",
+            "place_of_service": "11",
+            "cpt_code": "62284",
+            "modifiers": [],
+            "diagnosis_pointer": "A",
+            "charge_amount": "220.00",
+            "units": 1
+        }
+    ],
+    "billing_info": {
+        "billing_provider_name": "Commonwealth Radiology, PC",
+        "billing_provider_address": "2810 N Parham Road, Ste. 315, Richmond VA 23294-4434",
+        "billing_provider_tin": "N/A",
+        "billing_provider_npi": "N/A",
+        "total_charge": "300.00",
+        "patient_account_no": "1044895"
+    },
+    "Order_ID": "2A627589-B19F-47D1-B51A-2BF8B31EB034",
+    "filemaker_number": "2024102115501"
+}

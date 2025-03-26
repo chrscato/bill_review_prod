@@ -11,98 +11,55 @@ import logging
 
 class DatabaseService:
     """
-    Enhanced database service for the Bill Review System 2.0.
-    Provides robust data access methods and caching for improved performance.
+    Database service for the Bill Review System.
+    Provides data access methods with proper error handling and logging.
     """
     
-    def __init__(self, db_path: Optional[Path] = None):
-        """
-        Initialize the database service.
-        
-        Args:
-            db_path: Path to the SQLite database (default: from settings)
-        """
-        self.db_path = db_path or settings.DB_PATH
-        self._cache = {}  # Simple cache for frequently accessed data
-        self.logger = logging.getLogger(__name__)
-        
-    def connect_db(self) -> sqlite3.Connection:
-        """
-        Create a database connection with proper configuration.
-        
-        Returns:
-            sqlite3.Connection: Database connection
-        """
-        conn = sqlite3.connect(self.db_path)
-        
-        # Configure connection for better pandas integration
-        conn.row_factory = sqlite3.Row
-        
-        return conn
+    @staticmethod
+    def connect_db():
+        """Create database connection"""
+        return sqlite3.connect(settings.DB_PATH)
     
-    def get_line_items(self, order_id: str, conn: Optional[sqlite3.Connection] = None) -> pd.DataFrame:
+    @staticmethod
+    def get_line_items(order_id: str, conn: sqlite3.Connection) -> pd.DataFrame:
         """
-        Get line items for an order with enhanced error handling.
+        Get line items for an order with error handling.
         
         Args:
             order_id: Order ID to get line items for
-            conn: Database connection (optional)
+            conn: Database connection
             
         Returns:
             pd.DataFrame: DataFrame containing line items
         """
-        # Use provided connection or create a new one
-        close_conn = False
-        if conn is None:
-            conn = self.connect_db()
-            close_conn = True
-            
         try:
             query = """
             SELECT id, Order_ID, DOS, CPT, Modifier, Units, Description
             FROM line_items
             WHERE Order_ID = ?
             """
-            
-            # Execute query and handle empty results
             df = pd.read_sql_query(query, conn, params=[order_id])
             
-            # Add enhanced error handling
             if df.empty:
-                self.logger.warning(f"No line items found for Order_ID: {order_id}")
+                logging.warning(f"No line items found for Order_ID: {order_id}")
                 
             return df
         except Exception as e:
-            self.logger.error(f"Error getting line items for Order_ID {order_id}: {str(e)}")
-            # Return empty DataFrame with expected columns
+            logging.error(f"Error getting line items for Order_ID {order_id}: {str(e)}")
             return pd.DataFrame(columns=['id', 'Order_ID', 'DOS', 'CPT', 'Modifier', 'Units', 'Description'])
-        finally:
-            # Close connection if we created it
-            if close_conn and conn:
-                conn.close()
     
-    def get_provider_details(self, order_id: str, conn: Optional[sqlite3.Connection] = None) -> Optional[Dict]:
+    @staticmethod
+    def get_provider_details(order_id: str, conn: sqlite3.Connection) -> Optional[Dict]:
         """
-        Get provider details for an order with enhanced error handling and caching.
+        Get provider details through the orders-providers relationship.
         
         Args:
             order_id: Order ID to get provider details for
-            conn: Database connection (optional)
+            conn: Database connection
             
         Returns:
             Dict: Provider details or None if not found
         """
-        # Check cache first
-        cache_key = f"provider_details_{order_id}"
-        if cache_key in self._cache:
-            return self._cache[cache_key]
-            
-        # Use provided connection or create a new one
-        close_conn = False
-        if conn is None:
-            conn = self.connect_db()
-            close_conn = True
-            
         try:
             query = """
             SELECT 
@@ -129,43 +86,30 @@ class DatabaseService:
             """
             
             df = pd.read_sql_query(query, conn, params=[order_id])
-            
             if df.empty:
-                self.logger.warning(f"No provider details found for Order_ID: {order_id}")
+                logging.warning(f"No provider details found for Order_ID: {order_id}")
                 return None
                 
-            # Convert first row to dictionary
+            # Convert to dictionary and clean up NaN values
             provider_details = df.iloc[0].to_dict()
+            return {k: v for k, v in provider_details.items() if pd.notna(v)}
             
-            # Cache the result
-            self._cache[cache_key] = provider_details
-            
-            return provider_details
         except Exception as e:
-            self.logger.error(f"Error getting provider details for Order_ID {order_id}: {str(e)}")
+            logging.error(f"Error getting provider details for Order_ID {order_id}: {str(e)}")
             return None
-        finally:
-            # Close connection if we created it
-            if close_conn and conn:
-                conn.close()
     
-    def get_full_details(self, order_id: str, conn: Optional[sqlite3.Connection] = None) -> Dict:
+    @staticmethod
+    def get_full_details(order_id: str, conn: sqlite3.Connection) -> Dict:
         """
-        Fetch all related data for an order in a single query with improved result handling.
+        Fetch all related data for an order.
         
         Args:
             order_id: Order ID to get details for
-            conn: Database connection (optional)
+            conn: Database connection
             
         Returns:
             Dict: All related data for the order
         """
-        # Use provided connection or create a new one
-        close_conn = False
-        if conn is None:
-            conn = self.connect_db()
-            close_conn = True
-            
         try:
             queries = {
                 "order_details": "SELECT * FROM orders WHERE Order_ID = ?",
@@ -179,81 +123,58 @@ class DatabaseService:
             }
             
             results = {}
-            
             for table_name, query in queries.items():
                 try:
                     df = pd.read_sql_query(query, conn, params=[order_id])
-                    
                     if not df.empty:
                         if table_name == "line_items":
-                            # For line items, return all rows as a list of dictionaries
                             results[table_name] = df.to_dict('records')
                         else:
-                            # For singular tables, return the first row as a dictionary
                             results[table_name] = df.iloc[0].to_dict()
                     else:
-                        # Handle empty results with proper defaults
                         if table_name == "line_items":
                             results[table_name] = []
                         else:
                             results[table_name] = {}
-                            
                 except Exception as e:
-                    self.logger.error(f"Error executing query for {table_name}: {str(e)}")
-                    # Provide appropriate empty structure based on query type
+                    logging.error(f"Error executing query for {table_name}: {str(e)}")
                     if table_name == "line_items":
                         results[table_name] = []
                     else:
                         results[table_name] = {}
-            
+                        
             return results
         except Exception as e:
-            self.logger.error(f"Error getting full details for Order_ID {order_id}: {str(e)}")
-            # Return a structured empty result
+            logging.error(f"Error getting full details for Order_ID {order_id}: {str(e)}")
             return {
                 "order_details": {},
                 "provider_details": {},
                 "line_items": []
             }
-        finally:
-            # Close connection if we created it
-            if close_conn and conn:
-                conn.close()
-                
-    def check_bundle(self, order_id: str, conn: Optional[sqlite3.Connection] = None) -> bool:
+    
+    @staticmethod
+    def check_bundle(order_id: str, conn: sqlite3.Connection) -> bool:
         """
-        Check if an order is bundled with enhanced error handling.
+        Check if order is bundled.
         
         Args:
             order_id: Order ID to check
-            conn: Database connection (optional)
+            conn: Database connection
             
         Returns:
             bool: True if the order is bundled, False otherwise
         """
-        # Use provided connection or create a new one
-        close_conn = False
-        if conn is None:
-            conn = self.connect_db()
-            close_conn = True
-            
         try:
             query = "SELECT bundle_type FROM orders WHERE Order_ID = ?"
-            
             df = pd.read_sql_query(query, conn, params=[order_id])
             
             if df.empty:
                 return False
                 
-            # Check if bundle_type is not null/NaN
             return pd.notna(df['bundle_type'].iloc[0]) and df['bundle_type'].iloc[0] != ''
         except Exception as e:
-            self.logger.error(f"Error checking bundle for Order_ID {order_id}: {str(e)}")
+            logging.error(f"Error checking bundle for Order_ID {order_id}: {str(e)}")
             return False
-        finally:
-            # Close connection if we created it
-            if close_conn and conn:
-                conn.close()
     
     def get_procedure_categories(self, cpt_codes: List[str], conn: Optional[sqlite3.Connection] = None) -> Dict[str, str]:
         """
