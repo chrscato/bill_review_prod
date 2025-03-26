@@ -1,0 +1,33 @@
+{
+  "patient_info": {
+    "patient_name": "SANCHEZ\nJORGE",
+    "patient_dob": "08/11/70",
+    "patient_zip": ""
+  },
+  "service_lines": [
+    {
+      "date_of_service": "2024-03-25",
+      "place_of_service": "11",
+      "cpt_code": "70450",
+      "modifiers": [],
+      "diagnosis_pointer": "A",
+      "charge_amount": "2423",
+      "units": 1
+    }
+  ],
+  "billing_info": {
+    "billing_provider_name": "",
+    "billing_provider_address": "",
+    "billing_provider_tin": "54-0793767",
+    "billing_provider_npi": "",
+    "total_charge": "2423",
+    "patient_account_no": "999999999"
+  },
+  "Order_ID": "D4FBC4DC-D075-1942-A9E5-975E2E154C4A",
+  "filemaker_number": "JORGE SANCHEZ_3/25/2024",
+  "validation_messages": [
+    "Validation failed with 1 critical issues:",
+    "\nRATE Validation Failed:",
+    "- Message: Rate validation failed"
+  ]
+}

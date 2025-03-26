@@ -1,0 +1,39 @@
+{
+  "patient_info": {
+    "patient_name": "BLADE, JULIAN A",
+    "patient_dob": "MX\n12 02 2000",
+    "patient_zip": ""
+  },
+  "service_lines": [
+    {
+      "date_of_service": "2024-08-14",
+      "place_of_service": "11",
+      "cpt_code": "72110",
+      "modifiers": [
+        "TC"
+      ],
+      "diagnosis_pointer": "A",
+      "charge_amount": "150.00",
+      "units": 1
+    }
+  ],
+  "billing_info": {
+    "billing_provider_name": "",
+    "billing_provider_address": "",
+    "billing_provider_tin": "542041643",
+    "billing_provider_npi": "",
+    "total_charge": "150.00",
+    "patient_account_no": ""
+  },
+  "Order_ID": "CB1D758A-09FC-4D76-AF7D-4A01C2B149EE",
+  "filemaker_number": "JULIAN A BLADE_8/12/2024",
+  "validation_messages": [
+    "Validation failed with 3 critical issues:",
+    "\nINTENT Validation Failed:",
+    "- Message: Clinical intent mismatch: mri w/o in order vs xray in HCFA",
+    "\nLINE_ITEMS Validation Failed:",
+    "- Message: None of the HCFA line items matched order data",
+    "\nRATE Validation Failed:",
+    "- Message: Rate validation failed"
+  ]
+}

@@ -1,0 +1,42 @@
+{
+  "patient_info": {
+    "patient_name": "RIDLEY, ALESIA",
+    "patient_dob": "08161994",
+    "patient_zip": ""
+  },
+  "service_lines": [
+    {
+      "date_of_service": "2024-10-08",
+      "place_of_service": "11",
+      "cpt_code": "72141",
+      "modifiers": [],
+      "diagnosis_pointer": "A",
+      "charge_amount": "2651.00",
+      "units": 1
+    },
+    {
+      "date_of_service": "2024-10-08",
+      "place_of_service": "11",
+      "cpt_code": "72148",
+      "modifiers": [],
+      "diagnosis_pointer": "A",
+      "charge_amount": "2118.00",
+      "units": 1
+    }
+  ],
+  "billing_info": {
+    "billing_provider_name": "",
+    "billing_provider_address": "",
+    "billing_provider_tin": "",
+    "billing_provider_npi": "",
+    "total_charge": "4769",
+    "patient_account_no": "1210426954501"
+  },
+  "Order_ID": "FF239701-F9D8-40B7-8DA6-59A95F9DD7C8",
+  "filemaker_number": "",
+  "validation_messages": [
+    "Validation failed with 1 critical issues:",
+    "\nRATE Validation Failed:",
+    "- Message: Rate validation failed"
+  ]
+}

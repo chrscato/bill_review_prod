@@ -1,0 +1,35 @@
+{
+  "patient_info": {
+    "patient_name": "GRIFFIN TIREESHA",
+    "patient_dob": "10101994",
+    "patient_zip": ""
+  },
+  "service_lines": [
+    {
+      "date_of_service": "2024-11-24",
+      "place_of_service": "11",
+      "cpt_code": "73221",
+      "modifiers": [
+        "RT"
+      ],
+      "diagnosis_pointer": "A",
+      "charge_amount": "1286.00",
+      "units": 1
+    }
+  ],
+  "billing_info": {
+    "billing_provider_name": "",
+    "billing_provider_address": "",
+    "billing_provider_tin": "611352417",
+    "billing_provider_npi": "",
+    "total_charge": "1286.00",
+    "patient_account_no": "ZCTRJ89"
+  },
+  "Order_ID": "AE2B7093-FB0E-4E71-91F1-8FD4A83A94B6",
+  "filemaker_number": "",
+  "validation_messages": [
+    "Validation failed with 1 critical issues:",
+    "\nRATE Validation Failed:",
+    "- Message: Rate validation failed"
+  ]
+}
