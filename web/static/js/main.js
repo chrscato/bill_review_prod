@@ -1,6 +1,68 @@
 // Global variables
 let currentDocument = null;
 let allDocuments = [];
+let editedFields = new Set();
+
+// Define the click handler function globally
+function handleEditClick(event) {
+    event.preventDefault(); // Prevent any default button behavior
+    event.stopPropagation(); // Prevent event bubbling
+    
+    const button = event.currentTarget;
+    const field = button.dataset.field;
+    const section = button.dataset.section;
+    const index = button.dataset.index;
+    
+    console.log('Edit button clicked:', { field, section, index }); // Debug log
+    
+    // Find the editable field container - look in the same td as the button
+    const td = button.closest('td');
+    if (!td) {
+        console.error('Table cell not found'); // Debug log
+        return;
+    }
+    
+    // Find the editable field container within the same td
+    const editableField = td.querySelector('.editable-field');
+    if (!editableField) {
+        console.error('Editable field container not found'); // Debug log
+        return;
+    }
+    
+    const input = editableField.querySelector('.editable-input');
+    const display = editableField.querySelector('.editable-display');
+    
+    if (!input || !display) {
+        console.error('Input or display element not found'); // Debug log
+        return;
+    }
+    
+    if (button.textContent === 'Edit') {
+        // Show input and hide display
+        editableField.classList.add('editing');
+        input.focus(); // Focus the input field
+        
+        button.textContent = 'Cancel';
+        button.classList.remove('btn-outline-primary');
+        button.classList.add('btn-outline-danger');
+        editedFields.add(`${section}:${field}:${index || ''}`);
+    } else {
+        // Hide input and show display
+        editableField.classList.remove('editing');
+        
+        button.textContent = 'Edit';
+        button.classList.remove('btn-outline-danger');
+        button.classList.add('btn-outline-primary');
+        editedFields.delete(`${section}:${field}:${index || ''}`);
+    }
+    
+    // Show/hide save button for the section
+    const sectionSaveButton = document.querySelector(`.save-section[data-section="${section}"]`);
+    if (sectionSaveButton) {
+        const hasSectionEdits = Array.from(editedFields).some(f => f.startsWith(section + ':'));
+        sectionSaveButton.style.display = hasSectionEdits ? 'block' : 'none';
+    }
+}
 
 // Initialize the application
 document.addEventListener('DOMContentLoaded', function() {
@@ -153,17 +215,34 @@ function displayDetails(jsonDetails, dbDetails) {
         
         return `
             <div class="editable-field">
-                <span class="editable-display" style="display: block;">${displayValue}</span>
+                <span class="editable-display" data-field="${field}" data-section="${section}" ${dataAttr}>${displayValue}</span>
                 <input type="text" 
                        class="form-control form-control-sm editable-input" 
                        value="${inputValue}"
                        data-field="${field}"
                        data-section="${section}"
-                       ${dataAttr}
-                       style="display: none; width: 100%;">
+                       ${dataAttr}>
             </div>
         `;
     };
+
+    // Create service lines HTML
+    const serviceLinesHtml = (jsonDetails.service_lines || []).map((line, index) => `
+        <tr>
+            <td>${createEditableField(line.date_of_service, 'date_of_service', 'service_lines', index)}</td>
+            <td>${createEditableField(line.cpt_code, 'cpt_code', 'service_lines', index)}</td>
+            <td>${createEditableField(line.modifiers?.join(', '), 'modifiers', 'service_lines', index)}</td>
+            <td>${createEditableField(line.units, 'units', 'service_lines', index)}</td>
+            <td>${createEditableField(line.diagnosis_pointer, 'diagnosis_pointer', 'service_lines', index)}</td>
+            <td>${createEditableField(line.place_of_service, 'place_of_service', 'service_lines', index)}</td>
+            <td>${createEditableField(line.charge_amount, 'charge_amount', 'service_lines', index)}</td>
+            <td>
+                <button class="btn btn-sm btn-outline-primary edit-field" data-field="service_lines" data-section="service_lines" data-index="${index}">
+                    Edit
+                </button>
+            </td>
+        </tr>
+    `).join('');
 
     hcfaDetails.innerHTML = `
         <div class="card mb-4">
@@ -176,27 +255,27 @@ function displayDetails(jsonDetails, dbDetails) {
                     <table class="table table-sm">
                         <tr>
                             <th>Name</th>
-                            <td>${createEditableField(jsonDetails.patient_info?.patient_name, 'patient_name', 'patient_info')}</td>
+                            <td>${createEditableField(jsonDetails.patient_info?.name, 'name', 'patient_info')}</td>
                             <td>
-                                <button class="btn btn-sm btn-outline-primary edit-field" data-field="patient_name" data-section="patient_info">
+                                <button class="btn btn-sm btn-outline-primary edit-field" data-field="name" data-section="patient_info">
                                     Edit
                                 </button>
                             </td>
                         </tr>
                         <tr>
                             <th>DOB</th>
-                            <td>${createEditableField(formatDOB(jsonDetails.patient_info?.patient_dob), 'patient_dob', 'patient_info')}</td>
+                            <td>${createEditableField(formatDOB(jsonDetails.patient_info?.dob), 'dob', 'patient_info')}</td>
                             <td>
-                                <button class="btn btn-sm btn-outline-primary edit-field" data-field="patient_dob" data-section="patient_info">
+                                <button class="btn btn-sm btn-outline-primary edit-field" data-field="dob" data-section="patient_info">
                                     Edit
                                 </button>
                             </td>
                         </tr>
                         <tr>
-                            <th>Zip Code</th>
-                            <td>${createEditableField(jsonDetails.patient_info?.patient_zip, 'patient_zip', 'patient_info')}</td>
+                            <th>ZIP</th>
+                            <td>${createEditableField(jsonDetails.patient_info?.zip, 'zip', 'patient_info')}</td>
                             <td>
-                                <button class="btn btn-sm btn-outline-primary edit-field" data-field="patient_zip" data-section="patient_info">
+                                <button class="btn btn-sm btn-outline-primary edit-field" data-field="zip" data-section="patient_info">
                                     Edit
                                 </button>
                             </td>
@@ -205,7 +284,7 @@ function displayDetails(jsonDetails, dbDetails) {
                 </div>
             </div>
         </div>
-
+        
         <div class="card mb-4">
             <div class="card-header d-flex justify-content-between align-items-center">
                 <h6 class="mb-0">Billing Information</h6>
@@ -215,50 +294,28 @@ function displayDetails(jsonDetails, dbDetails) {
                 <div class="table-responsive">
                     <table class="table table-sm">
                         <tr>
-                            <th>Order ID</th>
-                            <td>${jsonDetails.Order_ID || 'N/A'}</td>
-                        </tr>
-                        <tr>
-                            <th>FileMaker Number</th>
-                            <td>${createEditableField(jsonDetails.filemaker_number, 'filemaker_number', 'root')}</td>
-                            <td>
-                                <button class="btn btn-sm btn-outline-primary edit-field" data-field="filemaker_number" data-section="root">
-                                    Edit
-                                </button>
-                            </td>
-                        </tr>
-                        <tr>
                             <th>Provider Name</th>
-                            <td>${createEditableField(jsonDetails.billing_info?.billing_provider_name, 'billing_provider_name', 'billing_info')}</td>
+                            <td>${createEditableField(jsonDetails.billing_info?.provider_name, 'provider_name', 'billing_info')}</td>
                             <td>
-                                <button class="btn btn-sm btn-outline-primary edit-field" data-field="billing_provider_name" data-section="billing_info">
+                                <button class="btn btn-sm btn-outline-primary edit-field" data-field="provider_name" data-section="billing_info">
                                     Edit
                                 </button>
                             </td>
                         </tr>
                         <tr>
                             <th>Provider NPI</th>
-                            <td>${createEditableField(jsonDetails.billing_info?.billing_provider_npi, 'billing_provider_npi', 'billing_info')}</td>
+                            <td>${createEditableField(jsonDetails.billing_info?.provider_npi, 'provider_npi', 'billing_info')}</td>
                             <td>
-                                <button class="btn btn-sm btn-outline-primary edit-field" data-field="billing_provider_npi" data-section="billing_info">
+                                <button class="btn btn-sm btn-outline-primary edit-field" data-field="provider_npi" data-section="billing_info">
                                     Edit
                                 </button>
                             </td>
                         </tr>
                         <tr>
                             <th>Provider TIN</th>
-                            <td>${createEditableField(jsonDetails.billing_info?.billing_provider_tin, 'billing_provider_tin', 'billing_info')}</td>
+                            <td>${createEditableField(jsonDetails.billing_info?.provider_tin, 'provider_tin', 'billing_info')}</td>
                             <td>
-                                <button class="btn btn-sm btn-outline-primary edit-field" data-field="billing_provider_tin" data-section="billing_info">
-                                    Edit
-                                </button>
-                            </td>
-                        </tr>
-                        <tr>
-                            <th>Account Number</th>
-                            <td>${createEditableField(jsonDetails.billing_info?.patient_account_no, 'patient_account_no', 'billing_info')}</td>
-                            <td>
-                                <button class="btn btn-sm btn-outline-primary edit-field" data-field="patient_account_no" data-section="billing_info">
+                                <button class="btn btn-sm btn-outline-primary edit-field" data-field="provider_tin" data-section="billing_info">
                                     Edit
                                 </button>
                             </td>
@@ -272,11 +329,20 @@ function displayDetails(jsonDetails, dbDetails) {
                                 </button>
                             </td>
                         </tr>
+                        <tr>
+                            <th>Account Number</th>
+                            <td>${createEditableField(jsonDetails.billing_info?.account_number, 'account_number', 'billing_info')}</td>
+                            <td>
+                                <button class="btn btn-sm btn-outline-primary edit-field" data-field="account_number" data-section="billing_info">
+                                    Edit
+                                </button>
+                            </td>
+                        </tr>
                     </table>
                 </div>
             </div>
         </div>
-
+        
         <div class="card mb-4">
             <div class="card-header d-flex justify-content-between align-items-center">
                 <h6 class="mb-0">Service Lines</h6>
@@ -287,221 +353,57 @@ function displayDetails(jsonDetails, dbDetails) {
                     <table class="table table-sm">
                         <thead>
                             <tr>
-                                <th>DOS</th>
+                                <th>Date of Service</th>
                                 <th>CPT</th>
                                 <th>Modifier</th>
                                 <th>Units</th>
-                                <th>Diagnosis</th>
+                                <th>Description</th>
                                 <th>Place of Service</th>
-                                <th>Charge</th>
+                                <th>Charge Amount</th>
                                 <th>Actions</th>
                             </tr>
                         </thead>
                         <tbody>
-                            ${(jsonDetails.service_lines || []).map((line, index) => `
-                                <tr>
-                                    <td>${createEditableField(line.date_of_service, 'date_of_service', 'service_lines', index)}</td>
-                                    <td>${createEditableField(line.cpt_code, 'cpt_code', 'service_lines', index)}</td>
-                                    <td>${createEditableField(line.modifiers?.join(', '), 'modifiers', 'service_lines', index)}</td>
-                                    <td>${createEditableField(line.units, 'units', 'service_lines', index)}</td>
-                                    <td>${createEditableField(line.diagnosis_pointer, 'diagnosis_pointer', 'service_lines', index)}</td>
-                                    <td>${createEditableField(line.place_of_service, 'place_of_service', 'service_lines', index)}</td>
-                                    <td>${createEditableField(line.charge_amount, 'charge_amount', 'service_lines', index)}</td>
-                                    <td>
-                                        <button class="btn btn-sm btn-outline-primary edit-field" data-field="service_lines" data-section="service_lines" data-index="${index}">
-                                            Edit
-                                        </button>
-                                    </td>
-                                </tr>
-                            `).join('')}
+                            ${serviceLinesHtml}
                         </tbody>
                     </table>
                 </div>
             </div>
         </div>
-
-        <div class="card mb-4">
-            <div class="card-header">
-                <h6 class="mb-0">Validation Messages</h6>
-            </div>
-            <div class="card-body">
-                <ul class="list-group">
-                    ${(jsonDetails.validation_messages || []).map(msg => `
-                        <li class="list-group-item">${msg}</li>
-                    `).join('')}
-                </ul>
-            </div>
-        </div>
     `;
 
-    // Add event listeners for edit functionality
+    // Attach event listeners to all edit buttons
     const editButtons = hcfaDetails.querySelectorAll('.edit-field');
-    const saveButtons = hcfaDetails.querySelectorAll('.save-section');
-    let editedFields = new Set();
-
     editButtons.forEach(button => {
-        button.addEventListener('click', () => {
-            const field = button.dataset.field;
-            const section = button.dataset.section;
-            const index = button.dataset.index;
-            
-            // Find the editable field container
-            const editableField = button.closest('td').querySelector('.editable-field');
-            if (!editableField) return;
-            
-            const input = editableField.querySelector('.editable-input');
-            const display = editableField.querySelector('.editable-display');
-            
-            if (button.textContent === 'Edit') {
-                // Show input and hide display
-                display.style.display = 'none';
-                input.style.display = 'block';
-                input.focus(); // Focus the input field
-                
-                button.textContent = 'Cancel';
-                button.classList.remove('btn-outline-primary');
-                button.classList.add('btn-outline-danger');
-                editedFields.add(`${section}:${field}:${index || ''}`);
-            } else {
-                // Hide input and show display
-                input.style.display = 'none';
-                display.style.display = 'block';
-                
-                button.textContent = 'Edit';
-                button.classList.remove('btn-outline-danger');
-                button.classList.add('btn-outline-primary');
-                editedFields.delete(`${section}:${field}:${index || ''}`);
-            }
-            
-            // Show/hide save button for the section
-            const sectionSaveButton = hcfaDetails.querySelector(`.save-section[data-section="${section}"]`);
-            if (sectionSaveButton) {
-                const hasSectionEdits = Array.from(editedFields).some(f => f.startsWith(section + ':'));
-                sectionSaveButton.style.display = hasSectionEdits ? 'block' : 'none';
-            }
-        });
+        // Remove any existing event listeners
+        button.removeEventListener('click', handleEditClick);
+        // Add the event listener
+        button.addEventListener('click', handleEditClick);
     });
 
-    // Add input event listeners to update display values in real-time
-    hcfaDetails.querySelectorAll('.editable-input').forEach(input => {
-        input.addEventListener('input', () => {
-            const field = input.dataset.field;
-            const section = input.dataset.section;
-            const index = input.dataset.index;
-            const display = hcfaDetails.querySelector(`.editable-display[data-field="${field}"][data-section="${section}"]${index !== null ? `[data-index="${index}"]` : ''}`);
-            if (display) {
-                display.textContent = input.value || 'N/A';
-            }
-        });
+    // Attach event listeners to all save buttons
+    const saveButtons = hcfaDetails.querySelectorAll('.save-section');
+    saveButtons.forEach(button => {
+        button.addEventListener('click', () => handleSaveClick(button.dataset.section));
     });
 
-    // Add keyboard event listeners for better UX
-    hcfaDetails.querySelectorAll('.editable-input').forEach(input => {
+    // Attach event listeners to all input fields
+    const inputFields = hcfaDetails.querySelectorAll('.editable-input');
+    inputFields.forEach(input => {
         input.addEventListener('keydown', (e) => {
             if (e.key === 'Enter') {
                 e.preventDefault();
                 const section = input.dataset.section;
-                const sectionSaveButton = hcfaDetails.querySelector(`.save-section[data-section="${section}"]`);
-                if (sectionSaveButton) {
-                    sectionSaveButton.click();
+                const saveButton = hcfaDetails.querySelector(`.save-section[data-section="${section}"]`);
+                if (saveButton) {
+                    handleSaveClick(section);
                 }
             } else if (e.key === 'Escape') {
-                const field = input.dataset.field;
-                const section = input.dataset.section;
-                const index = input.dataset.index;
-                const button = hcfaDetails.querySelector(`.edit-field[data-field="${field}"][data-section="${section}"]${index !== null ? `[data-index="${index}"]` : ''}`);
+                e.preventDefault();
+                const button = input.closest('td').querySelector('.edit-field');
                 if (button) {
-                    button.click(); // This will cancel the edit
+                    handleEditClick({ currentTarget: button });
                 }
-            }
-        });
-    });
-
-    saveButtons.forEach(button => {
-        button.addEventListener('click', async () => {
-            const section = button.dataset.section;
-            showLoading();
-            try {
-                const updatedData = { ...window.currentDocumentData };
-                
-                // Get all edited fields for this section
-                const sectionEdits = Array.from(editedFields)
-                    .filter(f => f.startsWith(section + ':'))
-                    .map(f => f.split(':'));
-                
-                sectionEdits.forEach(([_, field, index]) => {
-                    const input = hcfaDetails.querySelector(`.editable-input[data-field="${field}"][data-section="${section}"]${index ? `[data-index="${index}"]` : ''}`);
-                    if (!input) return;
-                    
-                    if (section === 'service_lines') {
-                        // Handle service lines array
-                        if (!updatedData.service_lines[index]) {
-                            updatedData.service_lines[index] = {};
-                        }
-                        if (field === 'modifiers') {
-                            // Convert comma-separated string back to array
-                            updatedData.service_lines[index][field] = input.value.split(',').map(m => m.trim()).filter(m => m);
-                        } else {
-                            updatedData.service_lines[index][field] = input.value;
-                        }
-                    } else if (section === 'root') {
-                        // Handle root-level fields
-                        updatedData[field] = input.value;
-                    } else {
-                        // Handle nested fields
-                        if (!updatedData[section]) {
-                            updatedData[section] = {};
-                        }
-                        updatedData[section][field] = input.value;
-                    }
-                });
-
-                const response = await fetch(`/api/failures/${currentDocument.filename}`, {
-                    method: 'PUT',
-                    headers: {
-                        'Content-Type': 'application/json',
-                    },
-                    body: JSON.stringify(updatedData)
-                });
-
-                if (!response.ok) {
-                    throw new Error('Failed to save changes');
-                }
-
-                // Reset UI for this section
-                sectionEdits.forEach(([_, field, index]) => {
-                    const input = hcfaDetails.querySelector(`.editable-input[data-field="${field}"][data-section="${section}"]${index ? `[data-index="${index}"]` : ''}`);
-                    const display = hcfaDetails.querySelector(`.editable-display[data-field="${field}"][data-section="${section}"]${index ? `[data-index="${index}"]` : ''}`);
-                    const editButton = hcfaDetails.querySelector(`.edit-field[data-field="${field}"][data-section="${section}"]${index ? `[data-index="${index}"]` : ''}`);
-                    
-                    if (display) display.textContent = input.value || 'N/A';
-                    if (display) display.style.display = 'block';
-                    if (input) input.style.display = 'none';
-                    if (editButton) {
-                        editButton.textContent = 'Edit';
-                        editButton.classList.remove('btn-outline-danger');
-                        editButton.classList.add('btn-outline-primary');
-                    }
-                });
-
-                // Remove edited fields for this section
-                editedFields = new Set(Array.from(editedFields).filter(f => !f.startsWith(section + ':')));
-                
-                // Hide save button if no more edits
-                if (editedFields.size === 0) {
-                    button.style.display = 'none';
-                }
-                
-                showSuccess('Changes saved successfully');
-                
-                // Refresh the document list
-                loadFailures();
-                
-            } catch (error) {
-                console.error('Error saving changes:', error);
-                showError('Failed to save changes');
-            } finally {
-                hideLoading();
             }
         });
     });
