@@ -1,4 +1,4 @@
-# config/settings.py
+# core/config/settings.py
 from pathlib import Path
 import os
 from dotenv import load_dotenv
@@ -7,7 +7,7 @@ from dotenv import load_dotenv
 load_dotenv()
 
 # Base paths
-BASE_DIR = Path(__file__).parent.parent
+BASE_DIR = Path(__file__).parent.parent.parent
 DATA_DIR = Path(r"C:\Users\ChristopherCato\OneDrive - clarity-dx.com\Documents\Bill_Review_INTERNAL\scripts\VAILIDATION\data")
 
 # Database settings
@@ -22,6 +22,15 @@ FAILS_DIR = JSON_DIR / "fails"
 DEBUG = True
 SECRET_KEY = 'your-secret-key-here'  # Change this in production
 
+# Create settings object for easy access
+settings = {
+    'DB_PATH': DB_PATH,
+    'FAILS_DIR': FAILS_DIR,
+    'SUCCESS_DIR': SUCCESS_DIR,
+    'DEBUG': DEBUG,
+    'SECRET_KEY': SECRET_KEY
+}
+
 class Settings:
     """
     Configuration settings for the Healthcare Bill Review System 2.0.
@@ -35,9 +44,9 @@ class Settings:
     LOG_PATH = Path(r"C:\Users\ChristopherCato\OneDrive - clarity-dx.com\Documents\Bill_Review_INTERNAL\validation logs")
     
     # Configuration files
-    BUNDLE_CONFIG = Path(r"C:\Users\ChristopherCato\OneDrive - clarity-dx.com\Documents\Bill_Review_INTERNAL\scripts\VAILIDATION\BRsystem\config\procedure_bundles.json")
-    CLINICAL_EQUIV_CONFIG = Path(r"C:\Users\ChristopherCato\OneDrive - clarity-dx.com\Documents\Bill_Review_INTERNAL\scripts\VAILIDATION\BRsystem\config\clinical_equivalents.json")
-    PROVIDER_RULES_CONFIG = Path(r"C:\Users\ChristopherCato\OneDrive - clarity-dx.com\Documents\Bill_Review_INTERNAL\scripts\VAILIDATION\BRsystem\config\provider_rules.json")
+    BUNDLE_CONFIG = BASE_DIR / "config" / "procedure_bundles.json"
+    CLINICAL_EQUIV_CONFIG = BASE_DIR / "config" / "clinical_equivalents.json"
+    PROVIDER_RULES_CONFIG = BASE_DIR / "config" / "provider_rules.json"
     
     # Validation constants
     UNACCEPTABLE_CPTS = {"51655"}
@@ -60,9 +69,6 @@ class Settings:
     DEBUG = DEBUG
     THREADS = 1  # Number of processing threads (1 = single-threaded)
 
-# Create a single settings instance
-settings = Settings()
-
 # Database settings
 DB_SERVER = os.getenv('DB_SERVER', 'your_server_name')
 DB_NAME = os.getenv('DB_NAME', 'your_database')
@@ -70,3 +76,5 @@ DB_DRIVER = os.getenv('DB_DRIVER', 'SQL Server')
 
 # Application settings
 SECRET_KEY = SECRET_KEY
+
+settings = Settings() 

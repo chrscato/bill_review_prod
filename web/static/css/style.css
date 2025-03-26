@@ -1,0 +1,125 @@
+/* General Styles */
+body {
+    background-color: #f8f9fa;
+}
+
+/* Header */
+.header {
+    box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+}
+
+/* Document List */
+.document-item {
+    padding: 0.75rem;
+    border: 1px solid #dee2e6;
+    border-radius: 0.25rem;
+    margin-bottom: 0.5rem;
+    cursor: pointer;
+    transition: all 0.2s ease;
+}
+
+.document-item:hover {
+    background-color: #f8f9fa;
+    border-color: #adb5bd;
+}
+
+.document-item.active {
+    background-color: #e9ecef;
+    border-color: #0d6efd;
+}
+
+/* Status Badges */
+.status-badge {
+    padding: 0.25rem 0.5rem;
+    border-radius: 0.25rem;
+    font-size: 0.75rem;
+    font-weight: 500;
+}
+
+.status-critical {
+    background-color: #dc3545;
+    color: white;
+}
+
+.status-non-critical {
+    background-color: #ffc107;
+    color: black;
+}
+
+/* Cards */
+.card {
+    border: 1px solid #dee2e6;
+    margin-bottom: 1rem;
+}
+
+.card-header {
+    background-color: #f8f9fa;
+    border-bottom: 1px solid #dee2e6;
+}
+
+/* Tables */
+.table th {
+    background-color: #f8f9fa;
+    font-weight: 600;
+}
+
+.table td {
+    vertical-align: middle;
+}
+
+/* Loading Overlay */
+.loading-overlay {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background-color: rgba(255, 255, 255, 0.8);
+    display: none;
+    justify-content: center;
+    align-items: center;
+    z-index: 9999;
+}
+
+/* Scrollbars */
+::-webkit-scrollbar {
+    width: 8px;
+    height: 8px;
+}
+
+::-webkit-scrollbar-track {
+    background: #f1f1f1;
+}
+
+::-webkit-scrollbar-thumb {
+    background: #888;
+    border-radius: 4px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+    background: #555;
+}
+
+/* Alerts */
+.alert {
+    margin-bottom: 1rem;
+}
+
+/* Validation Messages */
+.validation-message {
+    margin: 0;
+    white-space: pre-wrap;
+    font-family: monospace;
+}
+
+/* Responsive Adjustments */
+@media (max-width: 768px) {
+    .header .d-flex {
+        flex-direction: column;
+        gap: 0.5rem;
+    }
+    
+    .header .d-flex > * {
+        width: 100%;
+    }
+} 

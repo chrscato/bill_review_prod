@@ -9,16 +9,37 @@ from datetime import datetime
 from config.settings import settings
 import logging
 
+logger = logging.getLogger(__name__)
+
 class DatabaseService:
     """
     Database service for the Bill Review System.
     Provides data access methods with proper error handling and logging.
     """
     
-    @staticmethod
-    def connect_db():
-        """Create database connection"""
-        return sqlite3.connect(settings.DB_PATH)
+    def __init__(self):
+        """Initialize database connection parameters."""
+        self.db_path = settings.DB_PATH
+        self._cache = {}  # Initialize cache dictionary
+
+    def connect_db(self):
+        """Establish a connection to the database."""
+        try:
+            if not self.db_path.exists():
+                logger.error(f"Database file not found at: {self.db_path}")
+                raise FileNotFoundError(f"Database file not found at: {self.db_path}")
+            
+            logger.info(f"Attempting to connect to database at: {self.db_path}")
+            conn = sqlite3.connect(self.db_path)
+            conn.row_factory = sqlite3.Row  # Enable row factory for better dictionary-like access
+            logger.info("Successfully connected to database")
+            return conn
+        except sqlite3.Error as e:
+            logger.error(f"SQLite error connecting to database: {str(e)}")
+            raise
+        except Exception as e:
+            logger.error(f"Failed to connect to database: {str(e)}")
+            raise
     
     @staticmethod
     def get_line_items(order_id: str, conn: sqlite3.Connection) -> pd.DataFrame:
@@ -98,59 +119,113 @@ class DatabaseService:
             logging.error(f"Error getting provider details for Order_ID {order_id}: {str(e)}")
             return None
     
-    @staticmethod
-    def get_full_details(order_id: str, conn: sqlite3.Connection) -> Dict:
-        """
-        Fetch all related data for an order.
-        
-        Args:
-            order_id: Order ID to get details for
-            conn: Database connection
-            
-        Returns:
-            Dict: All related data for the order
-        """
+    def get_full_details(self, order_id: str) -> Dict:
+        """Get full order details including provider and line items"""
         try:
-            queries = {
-                "order_details": "SELECT * FROM orders WHERE Order_ID = ?",
-                "provider_details": """
-                SELECT p.* 
-                FROM orders o
-                JOIN providers p ON o.provider_id = p.PrimaryKey
-                WHERE o.Order_ID = ?
-                """,
-                "line_items": "SELECT * FROM line_items WHERE Order_ID = ?"
-            }
-            
-            results = {}
-            for table_name, query in queries.items():
-                try:
-                    df = pd.read_sql_query(query, conn, params=[order_id])
-                    if not df.empty:
-                        if table_name == "line_items":
-                            results[table_name] = df.to_dict('records')
-                        else:
-                            results[table_name] = df.iloc[0].to_dict()
-                    else:
-                        if table_name == "line_items":
-                            results[table_name] = []
-                        else:
-                            results[table_name] = {}
-                except Exception as e:
-                    logging.error(f"Error executing query for {table_name}: {str(e)}")
-                    if table_name == "line_items":
-                        results[table_name] = []
-                    else:
-                        results[table_name] = {}
-                        
-            return results
+            with self.connect_db() as conn:
+                cursor = conn.cursor()
+                
+                # Get order details
+                cursor.execute("""
+                    SELECT 
+                        o.Order_ID,
+                        o.FileMaker_Record_Number,
+                        o.PatientName,
+                        o.Patient_DOB,
+                        o.Patient_Zip,
+                        o.Order_Type,
+                        o.bundle_type,
+                        o.created_at,
+                        o.provider_id,
+                        o.provider_name
+                    FROM orders o
+                    WHERE o.Order_ID = ?
+                """, (order_id,))
+                
+                order_details = cursor.fetchone()
+                if not order_details:
+                    return None
+                
+                # Get provider details
+                cursor.execute("""
+                    SELECT 
+                        p.Name,
+                        p.NPI,
+                        p.TIN,
+                        p."Provider Status",
+                        p."Provider Network"
+                    FROM providers p
+                    WHERE p.PrimaryKey = ?
+                """, (order_details[8],))  # provider_id
+                
+                provider_details = cursor.fetchone()
+                
+                # Get line items
+                cursor.execute("""
+                    SELECT 
+                        li.DOS,
+                        li.CPT,
+                        li.Modifier,
+                        li.Units,
+                        li.Description,
+                        li.Charge,
+                        li.BR_paid,
+                        li.BR_rate,
+                        li.EOBR_doc_no,
+                        li.HCFA_doc_no,
+                        li.BR_date_processed
+                    FROM line_items li
+                    WHERE li.Order_ID = ?
+                    ORDER BY li.line_number
+                """, (order_id,))
+                
+                line_items = cursor.fetchall()
+                
+                # Convert to dictionaries
+                order_dict = {
+                    'Order_ID': order_details[0],
+                    'FileMaker_Record_Number': order_details[1],
+                    'PatientName': order_details[2],
+                    'Patient_DOB': order_details[3],
+                    'Patient_Zip': order_details[4],
+                    'Order_Type': order_details[5],
+                    'bundle_type': order_details[6],
+                    'created_date': order_details[7],
+                    'provider_id': order_details[8],
+                    'provider_name': order_details[9]
+                }
+                
+                provider_dict = {
+                    'provider_name': provider_details[0] if provider_details else None,
+                    'npi': provider_details[1] if provider_details else None,
+                    'tin': provider_details[2] if provider_details else None,
+                    'network_status': provider_details[3] if provider_details else None,
+                    'provider_network': provider_details[4] if provider_details else None
+                }
+                
+                line_items_list = [{
+                    'DOS': item[0],
+                    'CPT': item[1],
+                    'Modifier': item[2],
+                    'Units': item[3],
+                    'Description': item[4],
+                    'Charge': item[5],
+                    'BR_paid': item[6],
+                    'BR_rate': item[7],
+                    'EOBR_doc_no': item[8],
+                    'HCFA_doc_no': item[9],
+                    'BR_date_processed': item[10]
+                } for item in line_items]
+                
+                return {
+                    'order_details': order_dict,
+                    'provider_details': provider_dict,
+                    'line_items': line_items_list
+                }
+                
         except Exception as e:
-            logging.error(f"Error getting full details for Order_ID {order_id}: {str(e)}")
-            return {
-                "order_details": {},
-                "provider_details": {},
-                "line_items": []
-            }
+            logger.error(f"Error getting full details for order {order_id}: {str(e)}")
+            raise
     
     @staticmethod
     def check_bundle(order_id: str, conn: sqlite3.Connection) -> bool:
@@ -217,7 +292,7 @@ class DatabaseService:
                     
             return categories
         except Exception as e:
-            self.logger.error(f"Error getting procedure categories: {str(e)}")
+            logger.error(f"Error getting procedure categories: {str(e)}")
             # Return a minimal valid result
             return {cpt: None for cpt in cpt_codes}
         finally:
@@ -269,7 +344,7 @@ class DatabaseService:
                 
             return rates
         except Exception as e:
-            self.logger.error(f"Error getting PPO rates for TIN {provider_tin}: {str(e)}")
+            logger.error(f"Error getting PPO rates for TIN {provider_tin}: {str(e)}")
             return {}
         finally:
             # Close connection if we created it
@@ -319,7 +394,7 @@ class DatabaseService:
                 
             return rates
         except Exception as e:
-            self.logger.error(f"Error getting OTA rates for Order ID {order_id}: {str(e)}")
+            logger.error(f"Error getting OTA rates for Order ID {order_id}: {str(e)}")
             return {}
         finally:
             # Close connection if we created it
@@ -370,7 +445,7 @@ class DatabaseService:
             
             return bundle_info
         except Exception as e:
-            self.logger.error(f"Error getting bundle info for Order ID {order_id}: {str(e)}")
+            logger.error(f"Error getting bundle info for Order ID {order_id}: {str(e)}")
             return None
         finally:
             # Close connection if we created it
@@ -423,7 +498,7 @@ class DatabaseService:
             conn.commit()
             return True
         except Exception as e:
-            self.logger.error(f"Error saving validation result: {str(e)}")
+            logger.error(f"Error saving validation result: {str(e)}")
             return False
         finally:
             # Close connection if we created it
@@ -464,7 +539,7 @@ class DatabaseService:
             
             return ancillary_codes
         except Exception as e:
-            self.logger.error(f"Error getting ancillary codes: {str(e)}")
+            logger.error(f"Error getting ancillary codes: {str(e)}")
             return set()
         finally:
             # Close connection if we created it
@@ -502,7 +577,7 @@ class DatabaseService:
             
             return df
         except Exception as e:
-            self.logger.error(f"Error getting dim_proc table: {str(e)}")
+            logger.error(f"Error getting dim_proc table: {str(e)}")
             return pd.DataFrame()
         finally:
             # Close connection if we created it
@@ -573,7 +648,7 @@ class DatabaseService:
                 
             return df
         except Exception as e:
-            self.logger.error(f"Error getting validation failures: {str(e)}")
+            logger.error(f"Error getting validation failures: {str(e)}")
             return pd.DataFrame()
         finally:
             # Close connection if we created it
@@ -653,7 +728,7 @@ class DatabaseService:
                 
             return summary
         except Exception as e:
-            self.logger.error(f"Error getting validation summary: {str(e)}")
+            logger.error(f"Error getting validation summary: {str(e)}")
             return {"total": 0, "by_status": {}, "by_validation_type": {}}
         finally:
             # Close connection if we created it

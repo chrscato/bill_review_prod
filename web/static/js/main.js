@@ -95,21 +95,44 @@ async function selectDocument(doc) {
     // Load and display details
     showLoading();
     try {
-        const response = await fetch(`/api/failures/${doc.filename}`);
-        const data = await response.json();
-        displayDetails(data);
+        // Fetch JSON details first
+        const jsonResponse = await fetch(`/api/failures/${doc.filename}`);
+        const jsonData = await jsonResponse.json();
+        
+        if (jsonData.status !== 'success') {
+            throw new Error(`Failed to load JSON details: ${jsonData.message}`);
+        }
+        
+        // Then try to fetch DB details
+        let dbData = null;
+        try {
+            const dbResponse = await fetch(`/api/order/${doc.order_id}`);
+            dbData = await dbResponse.json();
+            
+            if (dbData.status !== 'success') {
+                console.warn(`Database details not available: ${dbData.message}`);
+            }
+        } catch (dbError) {
+            console.warn('Failed to load database details:', dbError);
+        }
+        
+        // Display details even if DB data is missing
+        displayDetails(jsonData.data, dbData?.data || null);
+        
     } catch (error) {
         console.error('Error loading document details:', error);
-        showError('Failed to load document details');
+        showError(`Failed to load document details: ${error.message}`);
     } finally {
         hideLoading();
     }
 }
 
 // Display document details
-function displayDetails(data) {
-    // Extract data from the response
-    const details = data.data || data;
+function displayDetails(jsonDetails, dbDetails) {
+    if (!jsonDetails) {
+        showError('No document details available');
+        return;
+    }
     
     // Display HCFA details
     const hcfaDetails = document.getElementById('hcfaDetails');
@@ -123,15 +146,15 @@ function displayDetails(data) {
                     <table class="table table-sm">
                         <tr>
                             <th>Name</th>
-                            <td>${details.patient_info?.patient_name || 'N/A'}</td>
+                            <td>${jsonDetails.patient_info?.name || 'N/A'}</td>
                         </tr>
                         <tr>
                             <th>DOB</th>
-                            <td>${details.patient_info?.patient_dob || 'N/A'}</td>
+                            <td>${jsonDetails.patient_info?.dob || 'N/A'}</td>
                         </tr>
                         <tr>
                             <th>Zip Code</th>
-                            <td>${details.patient_info?.patient_zip || 'N/A'}</td>
+                            <td>${jsonDetails.patient_info?.zip || 'N/A'}</td>
                         </tr>
                     </table>
                 </div>
@@ -147,34 +170,26 @@ function displayDetails(data) {
                     <table class="table table-sm">
                         <tr>
                             <th>Order ID</th>
-                            <td>${details.Order_ID || 'N/A'}</td>
+                            <td>${jsonDetails.order_info?.order_id || 'N/A'}</td>
                         </tr>
                         <tr>
                             <th>Provider Name</th>
-                            <td>${details.billing_info?.billing_provider_name || 'N/A'}</td>
+                            <td>${jsonDetails.billing_info?.provider_name || 'N/A'}</td>
                         </tr>
                         <tr>
                             <th>Provider NPI</th>
-                            <td>${details.billing_info?.billing_provider_npi || 'N/A'}</td>
-                        </tr>
-                        <tr>
-                            <th>Provider TIN</th>
-                            <td>${details.billing_info?.billing_provider_tin || 'N/A'}</td>
-                        </tr>
-                        <tr>
-                            <th>Account Number</th>
-                            <td>${details.billing_info?.patient_account_no || 'N/A'}</td>
+                            <td>${jsonDetails.billing_info?.provider_npi || 'N/A'}</td>
                         </tr>
                         <tr>
                             <th>Total Charge</th>
-                            <td>$${details.billing_info?.total_charge || '0.00'}</td>
+                            <td>$${jsonDetails.billing_info?.total_charge || '0.00'}</td>
                         </tr>
                     </table>
                 </div>
             </div>
         </div>
 
-        <div class="card">
+        <div class="card mb-4">
             <div class="card-header">
                 <h6 class="mb-0">Service Lines</h6>
             </div>
@@ -183,83 +198,143 @@ function displayDetails(data) {
                     <table class="table table-sm">
                         <thead>
                             <tr>
-                                <th>Date</th>
-                                <th>Place</th>
+                                <th>DOS</th>
                                 <th>CPT</th>
-                                <th>Mods</th>
-                                <th>Dx</th>
+                                <th>Modifier</th>
                                 <th>Units</th>
-                                <th>Amount</th>
+                                <th>Description</th>
+                                <th>Charge</th>
                             </tr>
                         </thead>
                         <tbody>
-                            ${details.service_lines ? details.service_lines.map(line => `
+                            ${(jsonDetails.service_lines || []).map(line => `
                                 <tr>
                                     <td>${line.date_of_service || 'N/A'}</td>
-                                    <td>${line.place_of_service || 'N/A'}</td>
-                                    <td>${line.cpt_code || 'N/A'}</td>
-                                    <td>${line.modifiers?.join(', ') || 'N/A'}</td>
-                                    <td>${line.diagnosis_pointer || 'N/A'}</td>
+                                    <td>${line.cpt || 'N/A'}</td>
+                                    <td>${line.modifier || 'N/A'}</td>
                                     <td>${line.units || 'N/A'}</td>
+                                    <td>${line.description || 'N/A'}</td>
                                     <td>$${line.charge_amount || '0.00'}</td>
                                 </tr>
-                            `).join('') : '<tr><td colspan="7">No service lines available</td></tr>'}
+                            `).join('')}
                         </tbody>
                     </table>
                 </div>
             </div>
         </div>
-    `;
 
-    // Display DB details
-    const dbDetails = document.getElementById('dbDetails');
-    dbDetails.innerHTML = `
         <div class="card mb-4">
-            <div class="card-header">
-                <h6 class="mb-0">Order Details</h6>
-            </div>
-            <div class="card-body">
-                <div class="table-responsive">
-                    <table class="table table-sm">
-                        <tr>
-                            <th>Order ID</th>
-                            <td>${details.Order_ID || 'N/A'}</td>
-                        </tr>
-                        <tr>
-                            <th>Filemaker Number</th>
-                            <td>${details.filemaker_number || 'N/A'}</td>
-                        </tr>
-                    </table>
-                </div>
-            </div>
-        </div>
-
-        <div class="card">
             <div class="card-header">
                 <h6 class="mb-0">Validation Messages</h6>
             </div>
             <div class="card-body">
-                <div class="validation-messages">
-                    ${details.validation_messages ? details.validation_messages.map(msg => `
-                        <div class="alert alert-info mb-2">
-                            <pre class="mb-0">${msg}</pre>
-                        </div>
-                    `).join('') : '<div class="alert alert-info">No validation messages available</div>'}
-                </div>
+                <ul class="list-group">
+                    ${(jsonDetails.validation_messages || []).map(msg => `
+                        <li class="list-group-item">${msg}</li>
+                    `).join('')}
+                </ul>
             </div>
         </div>
     `;
 
-    // Display validation messages in the right panel
-    const messagesContainer = document.getElementById('messageList');
-    messagesContainer.innerHTML = '';
-    if (details.validation_messages) {
-        details.validation_messages.forEach(msg => {
-            const div = document.createElement('div');
-            div.className = 'alert alert-info';
-            div.innerHTML = `<pre class="validation-message">${msg}</pre>`;
-            messagesContainer.appendChild(div);
-        });
+    // Display DB details if available
+    const dbDetailsPanel = document.getElementById('dbDetails');
+    if (dbDetails) {
+        dbDetailsPanel.innerHTML = `
+            <div class="card mb-4">
+                <div class="card-header">
+                    <h6 class="mb-0">Order Details</h6>
+                </div>
+                <div class="card-body">
+                    <div class="table-responsive">
+                        <table class="table table-sm">
+                            <tr>
+                                <th>Order ID</th>
+                                <td>${dbDetails.order_details?.Order_ID || 'N/A'}</td>
+                            </tr>
+                            <tr>
+                                <th>Status</th>
+                                <td>${dbDetails.order_details?.status || 'N/A'}</td>
+                            </tr>
+                            <tr>
+                                <th>Bundle Type</th>
+                                <td>${dbDetails.order_details?.bundle_type || 'N/A'}</td>
+                            </tr>
+                            <tr>
+                                <th>Created Date</th>
+                                <td>${dbDetails.order_details?.created_date || 'N/A'}</td>
+                            </tr>
+                        </table>
+                    </div>
+                </div>
+            </div>
+
+            <div class="card mb-4">
+                <div class="card-header">
+                    <h6 class="mb-0">Provider Details</h6>
+                </div>
+                <div class="card-body">
+                    <div class="table-responsive">
+                        <table class="table table-sm">
+                            <tr>
+                                <th>Name</th>
+                                <td>${dbDetails.provider_details?.provider_name || 'N/A'}</td>
+                            </tr>
+                            <tr>
+                                <th>NPI</th>
+                                <td>${dbDetails.provider_details?.npi || 'N/A'}</td>
+                            </tr>
+                            <tr>
+                                <th>Tax ID</th>
+                                <td>${dbDetails.provider_details?.tin || 'N/A'}</td>
+                            </tr>
+                            <tr>
+                                <th>Network Status</th>
+                                <td>${dbDetails.provider_details?.network_status || 'N/A'}</td>
+                            </tr>
+                        </table>
+                    </div>
+                </div>
+            </div>
+
+            <div class="card mb-4">
+                <div class="card-header">
+                    <h6 class="mb-0">Line Items</h6>
+                </div>
+                <div class="card-body">
+                    <div class="table-responsive">
+                        <table class="table table-sm">
+                            <thead>
+                                <tr>
+                                    <th>DOS</th>
+                                    <th>CPT</th>
+                                    <th>Modifier</th>
+                                    <th>Units</th>
+                                    <th>Description</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                ${(dbDetails.line_items || []).map(item => `
+                                    <tr>
+                                        <td>${item.DOS || 'N/A'}</td>
+                                        <td>${item.CPT || 'N/A'}</td>
+                                        <td>${item.Modifier || 'N/A'}</td>
+                                        <td>${item.Units || 'N/A'}</td>
+                                        <td>${item.Description || 'N/A'}</td>
+                                    </tr>
+                                `).join('')}
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+        `;
+    } else {
+        dbDetailsPanel.innerHTML = `
+            <div class="alert alert-warning">
+                Database details not available for this order.
+            </div>
+        `;
     }
 }
 
