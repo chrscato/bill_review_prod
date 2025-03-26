@@ -98,8 +98,8 @@ def get_failure_details(filename):
             }), 404
             
         # Get database details if we have an order ID
-        order_id = hcfa_data['order_info']['order_id']
-        if order_id != 'N/A':
+        order_id = hcfa_data.get('Order_ID')
+        if order_id and order_id != 'N/A':
             try:
                 db_data = db_service.get_full_details(order_id)
                 if db_data:
@@ -142,6 +142,40 @@ def get_order_details(order_id):
         
     except Exception as e:
         logger.error(f"Error getting order details: {str(e)}")
+        return jsonify({
+            'status': 'error',
+            'message': str(e)
+        }), 500
+
+@app.route('/api/failures/<filename>', methods=['PUT'])
+def update_failure_details(filename):
+    """API endpoint to update HCFA file details."""
+    try:
+        logger.info(f"Updating HCFA details for file: {filename}")
+        file_path = settings.FAILS_PATH / filename
+        
+        if not file_path.exists():
+            logger.error(f"File not found: {file_path}")
+            return jsonify({
+                'status': 'error',
+                'message': f'File not found: {filename}'
+            }), 404
+            
+        # Get the updated data from the request
+        updated_data = request.get_json()
+        
+        # Write the updated data back to the file
+        with open(file_path, 'w') as f:
+            json.dump(updated_data, f, indent=2)
+            
+        logger.info(f"Successfully updated file: {filename}")
+        return jsonify({
+            'status': 'success',
+            'message': 'File updated successfully'
+        })
+        
+    except Exception as e:
+        logger.error(f"Error updating file: {str(e)}")
         return jsonify({
             'status': 'error',
             'message': str(e)

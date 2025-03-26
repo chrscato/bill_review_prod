@@ -69,35 +69,8 @@ class HCFAService:
             if not data:
                 return None
                 
-            # Structure the response
-            return {
-                'patient_info': {
-                    'name': data.get('patient_info', {}).get('patient_name', 'N/A'),
-                    'dob': data.get('patient_info', {}).get('patient_dob', 'N/A'),
-                    'zip': data.get('patient_info', {}).get('patient_zip', 'N/A')
-                },
-                'billing_info': {
-                    'provider_name': data.get('billing_info', {}).get('billing_provider_name', 'N/A'),
-                    'provider_npi': data.get('billing_info', {}).get('billing_provider_npi', 'N/A'),
-                    'provider_tin': data.get('billing_info', {}).get('billing_provider_tin', 'N/A'),
-                    'total_charge': data.get('billing_info', {}).get('total_charge', '0.00'),
-                    'account_number': data.get('billing_info', {}).get('patient_account_no', 'N/A')
-                },
-                'service_lines': [{
-                    'date_of_service': line.get('date_of_service', 'N/A'),
-                    'cpt': line.get('cpt_code', 'N/A'),
-                    'modifier': ', '.join(line.get('modifiers', [])) if line.get('modifiers') else 'N/A',
-                    'units': line.get('units', 1),
-                    'description': line.get('diagnosis_pointer', 'N/A'),
-                    'charge_amount': line.get('charge_amount', '0.00'),
-                    'place_of_service': line.get('place_of_service', 'N/A')
-                } for line in data.get('service_lines', [])],
-                'order_info': {
-                    'order_id': data.get('Order_ID', 'N/A'),
-                    'filemaker_number': data.get('filemaker_number', 'N/A')
-                },
-                'validation_messages': data.get('validation_messages', [])
-            }
+            # Return the data as-is without transformation
+            return data
             
         except Exception as e:
             logger.error(f"Error reading HCFA details from {filename}: {str(e)}")
