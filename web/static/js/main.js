@@ -1,6 +1,8 @@
 // Global variables
 let currentDocument = null;
 let allDocuments = [];
+let allFailures = [];
+let uniqueFailureTypes = new Set();
 
 // Application state management
 const appState = {
@@ -563,6 +565,11 @@ async function saveDbSection(section) {
 
 // Initialize the application
 document.addEventListener('DOMContentLoaded', function() {
+    // Load rate correction script
+    const rateScript = document.createElement('script');
+    rateScript.src = '/static/js/rate_correction.js';
+    document.head.appendChild(rateScript);
+    
     loadFailures();
     setupEventListeners();
 });
@@ -675,19 +682,44 @@ function setupEventListeners() {
 
 // Load validation failures
 async function loadFailures() {
-    showLoading();
     try {
+        showLoading();
         const response = await fetch('/api/failures');
-        const result = await response.json();
-        if (result.status === 'success') {
-            allDocuments = result.data;
-            renderDocumentList(result.data);
-        } else {
-            showError('Failed to load validation failures: ' + result.message);
+        if (!response.ok) {
+            throw new Error('Failed to fetch failures');
         }
+        
+        const result = await response.json();
+        console.log('API Response:', result); // Log the API response
+        
+        if (result.status !== 'success') {
+            throw new Error(`Failed to load failures: ${result.message}`);
+        }
+        
+        // Store all failures
+        allFailures = result.data;
+        console.log('Stored failures:', allFailures); // Log stored failures
+        
+        // Extract unique failure types
+        uniqueFailureTypes.clear();
+        allFailures.forEach(failure => {
+            const types = extractFailureTypes(failure);
+            types.forEach(type => uniqueFailureTypes.add(type));
+        });
+        
+        // Update status filter dropdown
+        updateStatusFilter(allFailures);
+        
+        // Apply current filter
+        const statusFilter = document.getElementById('statusFilter');
+        const filteredFailures = filterFailuresByStatus(allFailures, statusFilter.value);
+        
+        // Display filtered failures
+        displayFailures(filteredFailures);
+        
     } catch (error) {
         console.error('Error loading failures:', error);
-        showError('Failed to load validation failures');
+        showError('Failed to load failures');
     } finally {
         hideLoading();
     }
@@ -718,51 +750,68 @@ function renderDocumentList(documents) {
 
 // Select a document
 async function selectDocument(doc) {
-  // Remove any existing save button
-  const existingSaveBtn = document.getElementById('saveAllChanges');
-  if (existingSaveBtn) existingSaveBtn.remove();
-  
-  currentDocument = doc;
-  
-  // Update active state in document list
-  document.querySelectorAll('.document-item').forEach(item => {
-    item.classList.remove('active');
-  });
-  event.currentTarget.classList.add('active');
-
-  // Load and display details
-  showLoading();
-  try {
-    // Fetch JSON details first
-    const jsonResponse = await fetch(`/api/failures/${doc.filename}`);
-    const jsonData = await jsonResponse.json();
-    
-    if (jsonData.status !== 'success') {
-      throw new Error(`Failed to load JSON details: ${jsonData.message}`);
-    }
-    
-    // Then try to fetch DB details
-    let dbData = null;
     try {
-      const dbResponse = await fetch(`/api/order/${doc.order_id}`);
-      dbData = await dbResponse.json();
-      
-      if (dbData.status !== 'success') {
-        console.warn(`Database details not available: ${dbData.message}`);
-      }
-    } catch (dbError) {
-      console.warn('Failed to load database details:', dbError);
+        showLoading();
+        currentDocument = doc;
+        
+        // Update active state in document list
+        document.querySelectorAll('.document-item').forEach(item => {
+            item.classList.remove('active');
+        });
+        event.currentTarget.classList.add('active');
+        
+        // Fetch document details
+        const [jsonResponse, dbResponse] = await Promise.all([
+            fetch(`/api/failures/${doc.filename}`),
+            fetch(`/api/order/${doc.order_id}`)
+        ]);
+        
+        if (!jsonResponse.ok) {
+            throw new Error('Failed to fetch document details');
+        }
+        
+        const jsonResult = await jsonResponse.json();
+        if (jsonResult.status !== 'success') {
+            throw new Error(`Failed to load JSON details: ${jsonResult.message}`);
+        }
+        
+        let dbData = null;
+        if (dbResponse.ok) {
+            const dbResult = await dbResponse.json();
+            if (dbResult.status === 'success') {
+                dbData = dbResult.data;
+            } else {
+                console.warn(`Database details not available: ${dbResult.message}`);
+            }
+        } else {
+            console.warn('Failed to load database details');
+        }
+        
+        // Display the details
+        displayDetails(jsonResult.data, dbData);
+        
+        // Always add the Fix Rates button for testing
+        const fixButton = document.createElement('button');
+        fixButton.className = 'btn btn-primary mt-3';
+        fixButton.id = 'fix-rate-button';
+        fixButton.textContent = 'Fix Rate Issues';
+        fixButton.onclick = function() {
+            // Call the rate correction modal function
+            showRateCorrectionModal(jsonResult.data);
+        };
+        
+        // Add button after validation messages
+        const messagesElement = hcfaDetails.querySelector('.card-body');
+        if (messagesElement) {
+            messagesElement.appendChild(fixButton);
+        }
+        
+    } catch (error) {
+        console.error('Error selecting document:', error);
+        showError('Failed to load document details');
+    } finally {
+        hideLoading();
     }
-    
-    // Display details even if DB data is missing
-    displayDetails(jsonData.data, dbData?.data || null);
-    
-  } catch (error) {
-    console.error('Error loading document details:', error);
-    showError(`Failed to load document details: ${error.message}`);
-  } finally {
-    hideLoading();
-  }
 }
 
 /**
@@ -1153,4 +1202,200 @@ function showSuccess(message) {
     `;
     document.querySelector('.container-fluid').insertBefore(alert, document.querySelector('.row'));
     setTimeout(() => alert.remove(), 5000);
+}
+
+// Function to extract unique failure types from validation messages
+function extractFailureTypes(failure) {
+    const types = new Set();
+    
+    if (failure.validation_messages) {
+        failure.validation_messages.forEach(msg => {
+            // Look for failure type indicators in messages
+            if (msg.includes('Validation failed with')) {
+                // Extract failure types from the message
+                const matches = msg.match(/([A-Za-z]+)\s+Validation\s+Failed/g);
+                if (matches) {
+                    matches.forEach(match => {
+                        const type = match.split(' ')[0]; // Get the first word (e.g., "RATE" from "RATE Validation Failed")
+                        types.add(type);
+                    });
+                }
+            }
+        });
+    }
+    
+    return types;
+}
+
+// Function to update the status filter dropdown
+function updateStatusFilter(failures) {
+    const statusFilter = document.getElementById('statusFilter');
+    const currentValue = statusFilter.value; // Store current selection
+    
+    // Clear existing options except the first one
+    while (statusFilter.options.length > 1) {
+        statusFilter.remove(1);
+    }
+    
+    // Get unique failure types from all failures
+    const uniqueTypes = new Set();
+    
+    // Log the first few failures for debugging
+    console.log('Sample failure structure:', failures.slice(0, 3));
+    
+    failures.forEach(failure => {
+        // Check validation_messages
+        if (failure.validation_messages) {
+            failure.validation_messages.forEach(msg => {
+                console.log('Processing message:', msg);
+                
+                // Look for rate, line items, and intent validation messages
+                if (msg.toLowerCase().includes('rate')) {
+                    uniqueTypes.add('RATE');
+                    console.log('Found rate in message:', msg);
+                }
+                if (msg.includes('LINE_ITEMS Validation Failed') || 
+                    msg.includes('Line Items Validation Failed') ||
+                    msg.toLowerCase().includes('line items validation failed')) {
+                    uniqueTypes.add('LINE_ITEMS');
+                    console.log('Found line items in message:', msg);
+                }
+                if (msg.includes('INTENT Validation Failed') || 
+                    msg.includes('Intent Validation Failed') ||
+                    msg.toLowerCase().includes('intent validation failed') ||
+                    msg.toLowerCase().includes('intent mismatch')) {
+                    uniqueTypes.add('INTENT');
+                    console.log('Found intent in message:', msg);
+                }
+            });
+        }
+    });
+    
+    // Log the unique types for debugging
+    console.log('Unique failure types:', Array.from(uniqueTypes));
+    
+    // Add unique failure types to dropdown
+    uniqueTypes.forEach(type => {
+        const option = document.createElement('option');
+        option.value = type.toLowerCase();
+        option.textContent = type;
+        statusFilter.appendChild(option);
+    });
+    
+    // Restore previous selection if it still exists
+    if (currentValue) {
+        statusFilter.value = currentValue;
+    }
+    
+    // Log the final dropdown state
+    console.log('Dropdown options:', Array.from(statusFilter.options).map(opt => opt.text));
+}
+
+// Function to filter failures based on status
+function filterFailuresByStatus(failures, selectedStatus) {
+    if (!selectedStatus || selectedStatus === 'all') {
+        return failures;
+    }
+    
+    return failures.filter(failure => {
+        if (!failure.validation_messages) return false;
+        
+        // Check for rate validation messages
+        if (selectedStatus.toLowerCase() === 'rate') {
+            return failure.validation_messages.some(msg => {
+                return msg.includes('RATE Validation Failed') || 
+                       msg.includes('Rate validation failed') ||
+                       msg.toLowerCase().includes('rate validation failed');
+            });
+        }
+        
+        // Check for line items validation messages
+        if (selectedStatus.toLowerCase() === 'line_items') {
+            return failure.validation_messages.some(msg => {
+                return msg.includes('LINE_ITEMS Validation Failed') || 
+                       msg.includes('Line Items Validation Failed') ||
+                       msg.toLowerCase().includes('line items validation failed');
+            });
+        }
+        
+        // Check for intent validation messages
+        if (selectedStatus.toLowerCase() === 'intent') {
+            return failure.validation_messages.some(msg => {
+                return msg.includes('INTENT Validation Failed') || 
+                       msg.includes('Intent Validation Failed') ||
+                       msg.toLowerCase().includes('intent validation failed') ||
+                       msg.toLowerCase().includes('intent mismatch');
+            });
+        }
+        
+        // For other status types, check failure_types
+        if (!failure.failure_types) return false;
+        return failure.failure_types.includes(selectedStatus.toUpperCase());
+    });
+}
+
+// Function to display failures in the document list
+function displayFailures(failures) {
+    const container = document.getElementById('documentList');
+    container.innerHTML = '';
+
+    if (!failures || failures.length === 0) {
+        container.innerHTML = '<div class="p-2 text-center text-muted">No documents found</div>';
+        return;
+    }
+
+    failures.forEach(failure => {
+        const div = document.createElement('div');
+        div.className = 'document-item';
+        div.dataset.filename = failure.file_name || '';
+        
+        // Create status badges for each failure type
+        const statusBadges = [];
+        
+        // Check validation messages for rate, line items, and intent failures
+        if (failure.validation_messages) {
+            failure.validation_messages.forEach(msg => {
+                if (msg.includes('RATE Validation Failed') || 
+                    msg.includes('Rate validation failed') ||
+                    msg.toLowerCase().includes('rate validation failed')) {
+                    statusBadges.push('<span class="badge bg-danger me-1">RATE</span>');
+                }
+                if (msg.includes('LINE_ITEMS Validation Failed') || 
+                    msg.includes('Line Items Validation Failed') ||
+                    msg.toLowerCase().includes('line items validation failed')) {
+                    statusBadges.push('<span class="badge bg-danger me-1">LINE_ITEMS</span>');
+                }
+                if (msg.includes('INTENT Validation Failed') || 
+                    msg.includes('Intent Validation Failed') ||
+                    msg.toLowerCase().includes('intent validation failed') ||
+                    msg.toLowerCase().includes('intent mismatch')) {
+                    statusBadges.push('<span class="badge bg-danger me-1">INTENT</span>');
+                }
+            });
+        }
+        
+        // Add any other failure types
+        if (failure.failure_types) {
+            failure.failure_types.forEach(type => {
+                if (type !== 'RATE' && type !== 'LINE_ITEMS' && type !== 'INTENT') { // Don't add duplicates
+                    statusBadges.push(`<span class="badge bg-danger me-1">${type}</span>`);
+                }
+            });
+        }
+        
+        div.innerHTML = `
+            <div class="d-flex justify-content-between align-items-center p-2">
+                <div class="text-truncate flex-grow-1">
+                    ${failure.file_name || 'Unknown File'}
+                </div>
+                <div class="ms-2">
+                    ${statusBadges.join('')}
+                </div>
+            </div>
+        `;
+        
+        // Add click handler
+        div.onclick = () => selectDocument(failure);
+        container.appendChild(div);
+    });
 }
