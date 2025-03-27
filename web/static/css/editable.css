@@ -137,4 +137,82 @@
   font-size: 0.9rem;
   white-space: pre-wrap;
   word-break: break-word;
+}
+
+.document-item {
+    padding: 3px 6px;
+    border-bottom: 1px solid #dee2e6;
+    cursor: pointer;
+    transition: background-color 0.2s;
+    font-size: 0.8rem;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.document-item:hover {
+    background-color: #f8f9fa;
+}
+
+.document-item.active {
+    background-color: #e9ecef;
+}
+
+.document-item .text-truncate {
+    max-width: 100%;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.status-badge {
+    font-size: 0.65rem;
+    padding: 1px 3px;
+    border-radius: 2px;
+    margin-left: 2px;
+}
+
+.status-critical {
+    background-color: #dc3545;
+    color: white;
+}
+
+.status-non-critical {
+    background-color: #ffc107;
+    color: black;
+}
+
+#documentList {
+    padding: 4px !important;
+    height: 100%;
+    overflow-y: auto;
+}
+
+#documentList::-webkit-scrollbar {
+    width: 4px;
+}
+
+#documentList::-webkit-scrollbar-track {
+    background: #f1f1f1;
+}
+
+#documentList::-webkit-scrollbar-thumb {
+    background: #888;
+    border-radius: 2px;
+}
+
+#documentList::-webkit-scrollbar-thumb:hover {
+    background: #555;
+}
+
+#documentList .card-header {
+    padding: 4px !important;
+}
+
+#documentList h6 {
+    font-size: 0.8rem;
+    margin: 0;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
 } 

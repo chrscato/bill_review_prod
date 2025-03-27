@@ -149,15 +149,19 @@ class DatabaseService:
                 # Get provider details
                 cursor.execute("""
                     SELECT 
-                        p.Name,
+                        p."DBA Name Billing Name",
                         p.NPI,
                         p.TIN,
                         p."Provider Status",
-                        p."Provider Network"
+                        p."Provider Network",
+                        p."Billing Address 1",
+                        p."Billing Address City",
+                        p."Billing Address Postal Code",
+                        p."Billing Address State",
+                        p."Billing Name"
                     FROM providers p
                     WHERE p.PrimaryKey = ?
                 """, (order_details[8],))  # provider_id
-                
                 provider_details = cursor.fetchone()
                 
                 # Get line items
@@ -195,12 +199,18 @@ class DatabaseService:
                     'provider_name': order_details[9]
                 }
                 
+                # Map provider details
                 provider_dict = {
                     'provider_name': provider_details[0] if provider_details else None,
                     'npi': provider_details[1] if provider_details else None,
                     'tin': provider_details[2] if provider_details else None,
                     'network_status': provider_details[3] if provider_details else None,
-                    'provider_network': provider_details[4] if provider_details else None
+                    'provider_network': provider_details[4] if provider_details else None,
+                    'billing_address_1': provider_details[5] if provider_details else None,
+                    'billing_address_city': provider_details[6] if provider_details else None,
+                    'billing_address_postal_code': provider_details[7] if provider_details else None,
+                    'billing_address_state': provider_details[8] if provider_details else None,
+                    'billing_name': provider_details[9] if provider_details else None
                 }
                 
                 line_items_list = [{
@@ -734,3 +744,111 @@ class DatabaseService:
             # Close connection if we created it
             if close_conn and conn:
                 conn.close()
+
+    def update_order_details(self, order_id: str, data: Dict) -> bool:
+        """
+        Update order details, provider details, and line items in the database.
+        
+        Args:
+            order_id: Order ID to update
+            data: Dictionary containing updated data
+            
+        Returns:
+            bool: True if successful, False otherwise
+        """
+        try:
+            conn = self.connect_db()
+            
+            try:
+                # Start a transaction
+                conn.execute("BEGIN TRANSACTION")
+                
+                # Update order details
+                if "order_details" in data:
+                    order_updates = []
+                    order_values = []
+                    
+                    for field, value in data["order_details"].items():
+                        if field != "Order_ID":  # Don't update the primary key
+                            order_updates.append(f"{field} = ?")
+                            order_values.append(value)
+                    
+                    if order_updates:
+                        order_query = f"""
+                        UPDATE orders 
+                        SET {', '.join(order_updates)}
+                        WHERE Order_ID = ?
+                        """
+                        order_values.append(order_id)
+                        conn.execute(order_query, order_values)
+                
+                # Update provider details if provider_id is present
+                if "provider_details" in data and "provider_id" in data.get("order_details", {}):
+                    provider_id = data["order_details"]["provider_id"]
+                    provider_updates = []
+                    provider_values = []
+                    
+                    for field, value in data["provider_details"].items():
+                        # Map field names to database column names
+                        db_field = field
+                        if field == "provider_name":
+                            db_field = "Name"
+                        elif field == "network_status":
+                            db_field = "Provider Status"
+                        elif field == "provider_network":
+                            db_field = "Provider Network"
+                        
+                        provider_updates.append(f'"{db_field}" = ?')
+                        provider_values.append(value)
+                    
+                    if provider_updates:
+                        provider_query = f"""
+                        UPDATE providers
+                        SET {', '.join(provider_updates)}
+                        WHERE PrimaryKey = ?
+                        """
+                        provider_values.append(provider_id)
+                        conn.execute(provider_query, provider_values)
+                
+                # Update line items
+                if "line_items" in data:
+                    for item in data["line_items"]:
+                        # Skip if no id is provided
+                        if "id" not in item:
+                            continue
+                            
+                        item_id = item["id"]
+                        item_updates = []
+                        item_values = []
+                        
+                        for field, value in item.items():
+                            if field != "id":  # Don't update the primary key
+                                item_updates.append(f"{field} = ?")
+                                item_values.append(value)
+                        
+                        if item_updates:
+                            item_query = f"""
+                            UPDATE line_items
+                            SET {', '.join(item_updates)}
+                            WHERE id = ? AND Order_ID = ?
+                            """
+                            item_values.extend([item_id, order_id])
+                            conn.execute(item_query, item_values)
+                
+                # Commit the transaction
+                conn.commit()
+                logger.info(f"Successfully updated database for Order ID: {order_id}")
+                return True
+                
+            except Exception as e:
+                # Rollback on error
+                conn.rollback()
+                logger.error(f"Error updating order details for {order_id}: {str(e)}")
+                return False
+                
+            finally:
+                conn.close()
+                
+        except Exception as e:
+            logger.error(f"Database connection error while updating order {order_id}: {str(e)}")
+            return False

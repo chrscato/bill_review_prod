@@ -181,5 +181,34 @@ def update_failure_details(filename):
             'message': str(e)
         }), 500
 
+@app.route('/api/order/<order_id>', methods=['PUT'])
+def update_order_details(order_id):
+    """API endpoint to update order details in the database."""
+    try:
+        logger.info(f"Updating database details for order: {order_id}")
+        updated_data = request.get_json()
+        
+        success = db_service.update_order_details(order_id, updated_data)
+        
+        if not success:
+            logger.error(f"Failed to update order: {order_id}")
+            return jsonify({
+                'status': 'error',
+                'message': f'Failed to update order: {order_id}'
+            }), 500
+            
+        logger.info(f"Successfully updated order: {order_id}")
+        return jsonify({
+            'status': 'success',
+            'message': 'Order updated successfully'
+        })
+        
+    except Exception as e:
+        logger.error(f"Error updating order: {str(e)}")
+        return jsonify({
+            'status': 'error',
+            'message': str(e)
+        }), 500
+
 if __name__ == '__main__':
     app.run(debug=True) 

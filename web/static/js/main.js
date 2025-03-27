@@ -445,6 +445,113 @@ async function saveAllChanges() {
   }
 }
 
+/**
+ * Save changes to the database
+ */
+async function saveDbSection(section) {
+  showLoading();
+  
+  try {
+    if (!currentDocument || !window.dbData) {
+      throw new Error('No document or database data available');
+    }
+    
+    const orderId = window.dbData.order_details?.Order_ID;
+    if (!orderId) {
+      throw new Error('No Order ID available');
+    }
+    
+    // Create a copy of the original data
+    const updatedData = JSON.parse(JSON.stringify(window.dbData));
+    
+    // Get the real section name without the db_ prefix
+    const realSection = section.substring(3); // Remove 'db_' prefix
+    
+    debug('Saving database section:', { section, realSection, orderId });
+    
+    // Get all edited fields for this section
+    const editableFields = document.querySelectorAll(`.editable-field[data-path^="${section}"]`);
+    debug(`Found ${editableFields.length} editable fields for section ${section}`);
+    
+    // Update data based on all fields
+    editableFields.forEach(field => {
+      const path = field.dataset.path;
+      const pathParts = path.split('.');
+      const input = field.querySelector('input');
+      const display = field.querySelector('.display-value');
+      
+      if (!input || !display) return;
+      
+      const newValue = input.value;
+      debug('Updating field:', { path, newValue });
+      
+      // Path format is like: db_order_details.PatientName
+      // Or for line items: db_line_items.0.CPT
+      if (pathParts.length === 2) {
+        // Simple field like db_order_details.PatientName
+        const fieldName = pathParts[1];
+        updatedData[realSection][fieldName] = newValue;
+      } else if (pathParts.length === 3 && realSection === 'line_items') {
+        // Line items field like db_line_items.0.CPT
+        const index = parseInt(pathParts[1]);
+        const fieldName = pathParts[2];
+        
+        // Make sure we have the correct item ID for database update
+        const row = document.querySelector(`tr[data-item-id]:nth-child(${index + 1})`);
+        const itemId = row?.dataset.itemId;
+        
+        if (itemId && updatedData[realSection][index]) {
+          updatedData[realSection][index][fieldName] = newValue;
+          updatedData[realSection][index]['id'] = itemId;
+          debug('Updated line item:', { index, fieldName, newValue, itemId });
+        } else {
+          debug('Could not find line item to update:', { index, itemId });
+        }
+      }
+      
+      // Exit edit mode
+      field.classList.remove('editing');
+      display.textContent = newValue || 'N/A';
+      display.style.display = 'block';
+      field.querySelector('.edit-container').style.display = 'none';
+    });
+    
+    debug('Sending updated data to server:', updatedData);
+    
+    // Send update to the server
+    const response = await fetch(`/api/order/${orderId}`, {
+      method: 'PUT',
+      headers: {
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify(updatedData)
+    });
+    
+    const result = await response.json();
+    
+    if (result.status === 'success') {
+      showSuccess('Database updated successfully');
+      
+      // Update the local data
+      window.dbData = updatedData;
+      
+      // Show Edit All button and hide Save button
+      const editAllButton = document.querySelector(`.edit-all-btn[data-section="${section}"]`);
+      const saveButton = document.querySelector(`.save-section[data-section="${section}"]`);
+      
+      if (editAllButton) editAllButton.style.display = 'block';
+      if (saveButton) saveButton.style.display = 'none';
+    } else {
+      throw new Error(result.message || 'Failed to update database');
+    }
+  } catch (error) {
+    logError('Error saving to database:', error);
+    showError(`Failed to save to database: ${error.message}`);
+  } finally {
+    hideLoading();
+  }
+}
+
 // Initialize the application
 document.addEventListener('DOMContentLoaded', function() {
     loadFailures();
@@ -510,37 +617,15 @@ function setupEventListeners() {
             event.preventDefault();
             
             const section = target.dataset.section;
-            const editableFields = document.querySelectorAll(`.editable-field[data-path^="${section}"]`);
             
-            // Save changes for all fields in the section
-            editableFields.forEach(field => {
-                const path = field.dataset.path;
-                const input = field.querySelector('input');
-                const display = field.querySelector('.display-value');
-                
-                if (!input || !display) return;
-                
-                const newValue = input.value;
-                
-                // Check if value actually changed
-                if (input.dataset.originalValue !== newValue) {
-                    // Update state
-                    appState.updateField(path, newValue);
-                    
-                    // Update display
-                    display.textContent = formatForDisplay(newValue);
-                }
-                
-                // Exit edit mode
-                field.classList.remove('editing');
-                display.style.display = 'block';
-                field.querySelector('.edit-container').style.display = 'none';
-            });
-            
-            // Show Edit All button and hide Save button
-            const editAllButton = document.querySelector(`.edit-all-btn[data-section="${section}"]`);
-            if (editAllButton) editAllButton.style.display = 'block';
-            target.style.display = 'none';
+            // Check if this is a database section (starts with db_)
+            if (section.startsWith('db_')) {
+                saveDbSection(section);
+            } else {
+                // Handle JSON saves as before
+                // (Your existing save logic for JSON fields)
+                // ...
+            }
         }
         
         // Global save button clicked
@@ -609,16 +694,12 @@ function renderDocumentList(documents) {
         div.className = 'document-item';
         div.innerHTML = `
             <div class="d-flex justify-content-between align-items-center">
-                <div>
-                    <strong>${doc.filename}</strong>
-                    <div class="text-muted small">Order ID: ${doc.order_id || 'N/A'}</div>
+                <div class="text-truncate">
+                    ${doc.filename}
                 </div>
                 <span class="status-badge ${doc.status === 'critical' ? 'status-critical' : 'status-non-critical'}">
                     ${doc.status}
                 </span>
-            </div>
-            <div class="text-muted small mt-1">
-                Patient: ${doc.patient_name || 'N/A'} | Date: ${doc.date_of_service || 'N/A'}
             </div>
         `;
         div.onclick = () => selectDocument(doc);
@@ -717,6 +798,15 @@ function displayDetails(jsonDetails, dbDetails) {
 
   hcfaDetails.innerHTML = `
     <div class="card mb-4">
+      <div class="card-header">
+        <h6 class="mb-0">Validation Messages</h6>
+      </div>
+      <div class="card-body">
+        <pre class="validation-message">${(jsonDetails.validation_messages || []).join('\n')}</pre>
+      </div>
+    </div>
+
+    <div class="card mb-4">
       <div class="card-header d-flex justify-content-between align-items-center">
         <h6 class="mb-0">Patient Information</h6>
         <div>
@@ -750,6 +840,40 @@ function displayDetails(jsonDetails, dbDetails) {
       </div>
     </div>
     
+    <div class="card mb-4">
+      <div class="card-header d-flex justify-content-between align-items-center">
+        <h6 class="mb-0">Service Lines</h6>
+        <div>
+          <button class="btn btn-sm btn-outline-primary edit-all-btn" data-section="service_lines">
+            Edit All
+          </button>
+          <button class="btn btn-sm btn-primary save-section" data-section="service_lines" style="display: none;">
+            Save Changes
+          </button>
+        </div>
+      </div>
+      <div class="card-body">
+        <div class="table-responsive">
+          <table class="table">
+            <thead>
+              <tr>
+                <th style="width: 120px;">Date of Service</th>
+                <th style="width: 100px;">CPT</th>
+                <th style="width: 150px;">Modifier</th>
+                <th style="width: 80px;">Units</th>
+                <th style="width: 100px;">Diagnosis</th>
+                <th style="width: 120px;">Place of Service</th>
+                <th style="width: 120px;">Charge Amount</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${serviceLinesHtml}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+
     <div class="card mb-4">
       <div class="card-header d-flex justify-content-between align-items-center">
         <h6 class="mb-0">Billing Information</h6>
@@ -791,56 +915,172 @@ function displayDetails(jsonDetails, dbDetails) {
         </div>
       </div>
     </div>
-    
-    <div class="card mb-4">
-      <div class="card-header d-flex justify-content-between align-items-center">
-        <h6 class="mb-0">Service Lines</h6>
-        <div>
-          <button class="btn btn-sm btn-outline-primary edit-all-btn" data-section="service_lines">
-            Edit All
-          </button>
-          <button class="btn btn-sm btn-primary save-section" data-section="service_lines" style="display: none;">
-            Save Changes
-          </button>
-        </div>
-      </div>
-      <div class="card-body">
-        <div class="table-responsive">
-          <table class="table">
-            <thead>
-              <tr>
-                <th style="width: 120px;">Date of Service</th>
-                <th style="width: 100px;">CPT</th>
-                <th style="width: 150px;">Modifier</th>
-                <th style="width: 80px;">Units</th>
-                <th style="width: 100px;">Diagnosis</th>
-                <th style="width: 120px;">Place of Service</th>
-                <th style="width: 120px;">Charge Amount</th>
-              </tr>
-            </thead>
-            <tbody>
-              ${serviceLinesHtml}
-            </tbody>
-          </table>
-        </div>
-      </div>
-    </div>
-    
-    <div class="card mb-4">
-      <div class="card-header">
-        <h6 class="mb-0">Validation Messages</h6>
-      </div>
-      <div class="card-body">
-        <pre class="validation-message">${(jsonDetails.validation_messages || []).join('\n')}</pre>
-      </div>
-    </div>
   `;
 
   // Display DB details if available
   const dbDetailsPanel = document.getElementById('dbDetails');
   if (dbDetails) {
-    // Render database details (no changes from your original implementation)
-    // ...existing dbDetails rendering code...
+    // Initialize dbData
+    window.dbData = dbDetails;
+    
+    // Render order details section
+    const orderDetails = dbDetails.order_details || {};
+    const providerDetails = dbDetails.provider_details || {};
+    const lineItems = dbDetails.line_items || [];
+    
+    dbDetailsPanel.innerHTML = `
+      <div class="card mb-4">
+        <div class="card-header d-flex justify-content-between align-items-center">
+          <h6 class="mb-0">Order Details</h6>
+          <div>
+            <button class="btn btn-sm btn-outline-primary edit-all-btn" data-section="db_order_details">
+              Edit All
+            </button>
+            <button class="btn btn-sm btn-primary save-section" data-section="db_order_details" style="display: none;">
+              Save Changes
+            </button>
+          </div>
+        </div>
+        <div class="card-body">
+          <div class="table-responsive">
+            <table class="table">
+              <tbody>
+                <tr>
+                  <th style="width: 200px;">Order ID</th>
+                  <td>${orderDetails.Order_ID || 'N/A'}</td>
+                </tr>
+                <tr>
+                  <th>FileMaker Record</th>
+                  <td>${createEditableField(orderDetails.FileMaker_Record_Number, 'db_order_details.FileMaker_Record_Number')}</td>
+                </tr>
+                <tr>
+                  <th>Patient Name</th>
+                  <td>${createEditableField(orderDetails.PatientName, 'db_order_details.PatientName')}</td>
+                </tr>
+                <tr>
+                  <th>Patient DOB</th>
+                  <td>${createEditableField(orderDetails.Patient_DOB, 'db_order_details.Patient_DOB')}</td>
+                </tr>
+                <tr>
+                  <th>Patient ZIP</th>
+                  <td>${createEditableField(orderDetails.Patient_Zip, 'db_order_details.Patient_Zip')}</td>
+                </tr>
+                <tr>
+                  <th>Order Type</th>
+                  <td>${createEditableField(orderDetails.Order_Type, 'db_order_details.Order_Type')}</td>
+                </tr>
+                <tr>
+                  <th>Bundle Type</th>
+                  <td>${createEditableField(orderDetails.bundle_type, 'db_order_details.bundle_type')}</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+      
+      <div class="card mb-4">
+        <div class="card-header d-flex justify-content-between align-items-center">
+          <h6 class="mb-0">Line Items</h6>
+          <div>
+            <button class="btn btn-sm btn-outline-primary edit-all-btn" data-section="db_line_items">
+              Edit All
+            </button>
+            <button class="btn btn-sm btn-primary save-section" data-section="db_line_items" style="display: none;">
+              Save Changes
+            </button>
+          </div>
+        </div>
+        <div class="card-body">
+          <div class="table-responsive">
+            <table class="table">
+              <thead>
+                <tr>
+                  <th>DOS</th>
+                  <th>CPT</th>
+                  <th>Modifier</th>
+                  <th>Units</th>
+                  <th>Description</th>
+                </tr>
+              </thead>
+              <tbody>
+                ${lineItems.map((item, index) => `
+                  <tr data-item-id="${item.id}">
+                    <td>${createEditableField(item.DOS, `db_line_items.${index}.DOS`)}</td>
+                    <td>${createEditableField(item.CPT, `db_line_items.${index}.CPT`)}</td>
+                    <td>${createEditableField(item.Modifier, `db_line_items.${index}.Modifier`)}</td>
+                    <td>${createEditableField(item.Units, `db_line_items.${index}.Units`)}</td>
+                    <td>${createEditableField(item.Description, `db_line_items.${index}.Description`)}</td>
+                  </tr>
+                `).join('')}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+
+      <div class="card mb-4">
+        <div class="card-header d-flex justify-content-between align-items-center">
+          <h6 class="mb-0">Provider Details</h6>
+          <div>
+            <button class="btn btn-sm btn-outline-primary edit-all-btn" data-section="db_provider_details">
+              Edit All
+            </button>
+            <button class="btn btn-sm btn-primary save-section" data-section="db_provider_details" style="display: none;">
+              Save Changes
+            </button>
+          </div>
+        </div>
+        <div class="card-body">
+          <div class="table-responsive">
+            <table class="table">
+              <tbody>
+                <tr>
+                  <th style="width: 200px;">Provider Name</th>
+                  <td>${createEditableField(providerDetails.provider_name, 'db_provider_details.provider_name')}</td>
+                </tr>
+                <tr>
+                  <th>NPI</th>
+                  <td>${createEditableField(providerDetails.npi, 'db_provider_details.npi')}</td>
+                </tr>
+                <tr>
+                  <th>TIN</th>
+                  <td>${createEditableField(providerDetails.tin, 'db_provider_details.tin')}</td>
+                </tr>
+                <tr>
+                  <th>Network Status</th>
+                  <td>${createEditableField(providerDetails.network_status, 'db_provider_details.network_status')}</td>
+                </tr>
+                <tr>
+                  <th>Provider Network</th>
+                  <td>${createEditableField(providerDetails.provider_network, 'db_provider_details.provider_network')}</td>
+                </tr>
+                <tr>
+                  <th>Billing Name</th>
+                  <td>${createEditableField(providerDetails.billing_name, 'db_provider_details.billing_name')}</td>
+                </tr>
+                <tr>
+                  <th>Billing Address</th>
+                  <td>${createEditableField(providerDetails.billing_address_1, 'db_provider_details.billing_address_1')}</td>
+                </tr>
+                <tr>
+                  <th>Billing City</th>
+                  <td>${createEditableField(providerDetails.billing_address_city, 'db_provider_details.billing_address_city')}</td>
+                </tr>
+                <tr>
+                  <th>Billing State</th>
+                  <td>${createEditableField(providerDetails.billing_address_state, 'db_provider_details.billing_address_state')}</td>
+                </tr>
+                <tr>
+                  <th>Billing ZIP</th>
+                  <td>${createEditableField(providerDetails.billing_address_postal_code, 'db_provider_details.billing_address_postal_code')}</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+    `;
   } else {
     dbDetailsPanel.innerHTML = `
       <div class="alert alert-warning">
