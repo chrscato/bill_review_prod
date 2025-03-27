@@ -768,8 +768,12 @@ class DatabaseService:
                     order_updates = []
                     order_values = []
                     
+                    # Get list of valid columns from the orders table
+                    cursor = conn.execute("PRAGMA table_info(orders)")
+                    valid_columns = [row[1] for row in cursor.fetchall()]
+                    
                     for field, value in data["order_details"].items():
-                        if field != "Order_ID":  # Don't update the primary key
+                        if field != "Order_ID" and field in valid_columns:  # Don't update the primary key and only update valid columns
                             order_updates.append(f"{field} = ?")
                             order_values.append(value)
                     
@@ -788,6 +792,10 @@ class DatabaseService:
                     provider_updates = []
                     provider_values = []
                     
+                    # Get list of valid columns from the providers table
+                    cursor = conn.execute("PRAGMA table_info(providers)")
+                    valid_columns = [row[1] for row in cursor.fetchall()]
+                    
                     for field, value in data["provider_details"].items():
                         # Map field names to database column names
                         db_field = field
@@ -798,8 +806,9 @@ class DatabaseService:
                         elif field == "provider_network":
                             db_field = "Provider Network"
                         
-                        provider_updates.append(f'"{db_field}" = ?')
-                        provider_values.append(value)
+                        if db_field in valid_columns:  # Only update valid columns
+                            provider_updates.append(f'"{db_field}" = ?')
+                            provider_values.append(value)
                     
                     if provider_updates:
                         provider_query = f"""
@@ -812,6 +821,10 @@ class DatabaseService:
                 
                 # Update line items
                 if "line_items" in data:
+                    # Get list of valid columns from the line_items table
+                    cursor = conn.execute("PRAGMA table_info(line_items)")
+                    valid_columns = [row[1] for row in cursor.fetchall()]
+                    
                     for item in data["line_items"]:
                         # Skip if no id is provided
                         if "id" not in item:
@@ -822,7 +835,7 @@ class DatabaseService:
                         item_values = []
                         
                         for field, value in item.items():
-                            if field != "id":  # Don't update the primary key
+                            if field != "id" and field in valid_columns:  # Don't update the primary key and only update valid columns
                                 item_updates.append(f"{field} = ?")
                                 item_values.append(value)
                         

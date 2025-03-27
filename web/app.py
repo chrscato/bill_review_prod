@@ -1,4 +1,4 @@
-from flask import Flask, render_template, jsonify, request
+from flask import Flask, render_template, jsonify, request, send_from_directory
 from pathlib import Path
 import json
 from typing import List, Dict
@@ -8,8 +8,12 @@ from core.services.database import DatabaseService
 from core.services.hcfa import HCFAService
 from contextlib import contextmanager
 from config.settings import settings
+from flask_cors import CORS
+import os
+from core.services.normalizer import normalize_hcfa_format
 
 app = Flask(__name__)
+CORS(app)  # Enable CORS for all routes
 app.config['SECRET_KEY'] = 'your-secret-key-here'  # Change this in production
 
 # Configure logging
@@ -187,6 +191,7 @@ def update_order_details(order_id):
     try:
         logger.info(f"Updating database details for order: {order_id}")
         updated_data = request.get_json()
+        logger.info(f"Received update data: {json.dumps(updated_data, indent=2)}")
         
         success = db_service.update_order_details(order_id, updated_data)
         
@@ -204,7 +209,7 @@ def update_order_details(order_id):
         })
         
     except Exception as e:
-        logger.error(f"Error updating order: {str(e)}")
+        logger.error(f"Error updating order: {str(e)}", exc_info=True)
         return jsonify({
             'status': 'error',
             'message': str(e)

@@ -468,6 +468,7 @@ async function saveDbSection(section) {
     const realSection = section.substring(3); // Remove 'db_' prefix
     
     debug('Saving database section:', { section, realSection, orderId });
+    debug('Original data:', window.dbData);
     
     // Get all edited fields for this section
     const editableFields = document.querySelectorAll(`.editable-field[data-path^="${section}"]`);
@@ -522,12 +523,20 @@ async function saveDbSection(section) {
     const response = await fetch(`/api/order/${orderId}`, {
       method: 'PUT',
       headers: {
-        'Content-Type': 'application/json'
+        'Content-Type': 'application/json',
+        'Accept': 'application/json'
       },
       body: JSON.stringify(updatedData)
     });
     
+    if (!response.ok) {
+      const errorData = await response.json();
+      debug('Server error response:', errorData);
+      throw new Error(errorData.message || `HTTP error! status: ${response.status}`);
+    }
+    
     const result = await response.json();
+    debug('Server success response:', result);
     
     if (result.status === 'success') {
       showSuccess('Database updated successfully');
