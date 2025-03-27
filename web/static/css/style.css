@@ -232,6 +232,29 @@ body {
   box-shadow: 0 0.5rem 1rem rgba(0, 0, 0, 0.15);
 }
 
+/* OTA Correction Modal Styles */
+.ota-rate-input {
+  width: 100px;
+}
+
+#ota-items-table .description-cell {
+  max-width: 200px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Network status indicators */
+.network-status-in {
+  color: #28a745;
+  font-weight: bold;
+}
+
+.network-status-out {
+  color: #dc3545;
+  font-weight: bold;
+}
+
 /* Responsive adjustments */
 @media (max-width: 768px) {
     .editable-field {
@@ -246,4 +269,17 @@ body {
     .table td {
         padding: 0.75rem;
     }
+}
+
+#resolve-bill-button {
+    background-color: #28a745;
+    color: white;
+    font-weight: bold;
+    transition: all 0.2s;
+}
+
+#resolve-bill-button:hover {
+    background-color: #218838;
+    transform: translateY(-2px);
+    box-shadow: 0 2px 5px rgba(0,0,0,0.2);
 } 

@@ -128,16 +128,14 @@ function isRateValidationFailure(failure) {
     return false;
 }
 
-/**
- * Show the rate correction modal for a specific failure
- * @param {Object} failure - The failure data object
- */
-function showRateCorrectionModal(failure) {
+// Define and export the showRateCorrectionModal function immediately
+window.showRateCorrectionModal = function(failure) {
+    console.log('Rate correction modal function called');
     console.log('Checking if document qualifies for rate correction:', failure);
     
     // Check if this is a rate validation failure
     if (!isRateValidationFailure(failure)) {
-        console.log('Document does not qualify: Not a rate validation failure');
+        showErrorMessage('This document does not have any rate validation failures.');
         return;
     }
     
@@ -146,7 +144,7 @@ function showRateCorrectionModal(failure) {
     console.log('Provider info from database details:', providerInfo);
     
     if (!isInNetworkProvider(providerInfo)) {
-        console.log('Document does not qualify: Provider is not in-network');
+        showErrorMessage('Rate correction is only available for in-network providers. This provider is out-of-network.');
         return;
     }
     
@@ -172,13 +170,29 @@ function showRateCorrectionModal(failure) {
     
     // Reset active tab to line item correction
     const tabElement = document.getElementById('line-item-tab');
-    const tab = new bootstrap.Tab(tabElement);
-    tab.show();
+    if (tabElement) {
+        const tab = new bootstrap.Tab(tabElement);
+        tab.show();
+    }
     
     // Show the modal
-    const modal = new bootstrap.Modal(document.getElementById('rateCorrectionModal'));
-    modal.show();
-}
+    const modalElement = document.getElementById('rateCorrectionModal');
+    if (modalElement) {
+        // Check if Bootstrap is loaded
+        if (typeof bootstrap !== 'undefined' && bootstrap.Modal) {
+            const modal = new bootstrap.Modal(modalElement);
+            modal.show();
+        } else {
+            // Fallback if Bootstrap is not loaded
+            modalElement.style.display = 'block';
+            modalElement.classList.add('show');
+            document.body.classList.add('modal-open');
+        }
+    } else {
+        console.error('Rate correction modal element not found');
+        showErrorMessage('Could not find rate correction modal. Please refresh the page and try again.');
+    }
+};
 
 /**
  * Populate the line items table with rate failure data
@@ -576,7 +590,4 @@ document.addEventListener('DOMContentLoaded', function() {
   if (saveButton) {
     saveButton.addEventListener('click', saveRateCorrections);
   }
-});
-
-// Export functions for use in other modules
-window.showRateCorrectionModal = showRateCorrectionModal; 
+}); 

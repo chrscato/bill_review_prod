@@ -198,10 +198,11 @@ function createEditableField(value, path) {
       <div class="display-value" id="${fieldId}-display">${displayValue}</div>
       <div class="edit-container" style="display: none;">
         <input type="text" 
-               class="form-control form-control-sm" 
+               class="form-control form-control-sm editable-input" 
                id="${fieldId}-input" 
                value="${inputValue}" 
-               data-original-value="${inputValue}">
+               data-original-value="${inputValue}"
+               data-path="${path}">
       </div>
     </div>
   `;
@@ -291,8 +292,8 @@ async function handleSaveClick(section) {
     showLoading();
     
     try {
-        // Get current document data
-        const documentData = window.currentDocumentData;
+        // Get current document data from appState
+        const documentData = appState.currentDocument;
         if (!documentData) {
             throw new Error('No document data available');
         }
@@ -307,7 +308,7 @@ async function handleSaveClick(section) {
         const editedFieldsForSection = Array.from(document.querySelectorAll(`.editable-field.editing`))
             .filter(field => {
                 const input = field.querySelector('.editable-input');
-                return input && input.dataset.section === section;
+                return input && input.dataset.path.startsWith(section);
             });
         
         debug('Fields to update:', editedFieldsForSection.length);
@@ -316,8 +317,10 @@ async function handleSaveClick(section) {
         editedFieldsForSection.forEach(field => {
             const input = field.querySelector('.editable-input');
             const value = input.value;
-            const fieldName = input.dataset.field;
-            const index = input.hasAttribute('data-index') ? parseInt(input.dataset.index) : null;
+            const path = input.dataset.path;
+            const pathParts = path.split('.');
+            const fieldName = pathParts[pathParts.length - 1];
+            const index = pathParts.length > 2 ? parseInt(pathParts[1]) : null;
             
             debug('Updating field:', { fieldName, value, index });
             
@@ -350,12 +353,12 @@ async function handleSaveClick(section) {
             
             // Reset edit state
             field.classList.remove('editing');
-            const editButton = field.closest('td').querySelector('.edit-field');
-            if (editButton) {
-                editButton.textContent = 'Edit';
-                editButton.classList.remove('btn-outline-danger');
-                editButton.classList.add('btn-outline-primary');
+            const display = field.querySelector('.display-value');
+            if (display) {
+                display.textContent = value || 'N/A';
+                display.style.display = 'block';
             }
+            field.querySelector('.edit-container').style.display = 'none';
         });
         
         debug('Updated data:', updatedData);
@@ -374,26 +377,14 @@ async function handleSaveClick(section) {
         if (result.status === 'success') {
             showSuccess('Changes saved successfully');
             
-            // Update the local data
-            window.currentDocumentData = updatedData;
+            // Update the appState with new data
+            appState.setDocument(updatedData);
             
-            // Update the UI with new values
-            editedFieldsForSection.forEach(field => {
-                const display = field.querySelector('.editable-display');
-                const input = field.querySelector('.editable-input');
-                if (display && input) {
-                    display.textContent = input.value || 'N/A';
-                }
-            });
-            
-            // Reset edited fields tracking
-            editedFields.clear();
-            
-            // Hide save button
+            // Hide save button and show edit all button
             const saveButton = document.querySelector(`.save-section[data-section="${section}"]`);
-            if (saveButton) {
-                saveButton.style.display = 'none';
-            }
+            const editAllButton = document.querySelector(`.edit-all-btn[data-section="${section}"]`);
+            if (saveButton) saveButton.style.display = 'none';
+            if (editAllButton) editAllButton.style.display = 'block';
         } else {
             throw new Error(result.message || 'Failed to save changes');
         }
@@ -565,14 +556,61 @@ async function saveDbSection(section) {
 
 // Initialize the application
 document.addEventListener('DOMContentLoaded', function() {
-    // Load rate correction script
-    const rateScript = document.createElement('script');
-    rateScript.src = '/static/js/rate_correction.js';
-    document.head.appendChild(rateScript);
-    
+    // Remove dynamic script loading since it's already in HTML
     loadFailures();
     setupEventListeners();
 });
+
+/**
+ * Mark a bill as resolved and move it back to staging
+ * @param {Object} failure - The failure data object
+ */
+async function resolveBill(failure) {
+    if (!failure || !failure.filename) {
+        showError('Invalid failure data');
+        return;
+    }
+    
+    try {
+        showLoading();
+        const filename = failure.filename;
+        
+        const response = await fetch(`/api/failures/${filename}/resolve`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json'
+            }
+        });
+        
+        if (!response.ok) {
+            const errorData = await response.json();
+            throw new Error(errorData.message || `HTTP error! status: ${response.status}`);
+        }
+        
+        const result = await response.json();
+        
+        showSuccess('Bill has been resolved and moved to staging');
+        
+        // Remove the failure from the document list
+        const failureElement = document.querySelector(`.document-item[data-filename="${filename}"]`);
+        if (failureElement) {
+            failureElement.remove();
+        }
+        
+        // Clear the details panels
+        document.getElementById('hcfaDetails').innerHTML = '<div class="alert alert-success">Bill has been resolved and moved to staging.</div>';
+        document.getElementById('dbDetails').innerHTML = '';
+        
+        // Remove from currentDocument
+        currentDocument = null;
+        
+    } catch (error) {
+        console.error('Error resolving bill:', error);
+        showError(`Failed to resolve bill: ${error.message}`);
+    } finally {
+        hideLoading();
+    }
+}
 
 // Setup event listeners
 function setupEventListeners() {
@@ -638,9 +676,8 @@ function setupEventListeners() {
             if (section.startsWith('db_')) {
                 saveDbSection(section);
             } else {
-                // Handle JSON saves as before
-                // (Your existing save logic for JSON fields)
-                // ...
+                // Handle JSON saves
+                handleSaveClick(section);
             }
         }
         
@@ -700,6 +737,15 @@ async function loadFailures() {
         allFailures = result.data;
         console.log('Stored failures:', allFailures); // Log stored failures
         
+        // Log sample of failures for debugging
+        if (allFailures.length > 0) {
+            console.log('Sample failure structure:', {
+                validation_messages: allFailures[0].validation_messages,
+                database_details: allFailures[0].database_details,
+                provider_details: allFailures[0].database_details?.provider_details
+            });
+        }
+        
         // Extract unique failure types
         uniqueFailureTypes.clear();
         allFailures.forEach(failure => {
@@ -713,6 +759,9 @@ async function loadFailures() {
         // Apply current filter
         const statusFilter = document.getElementById('statusFilter');
         const filteredFailures = filterFailuresByStatus(allFailures, statusFilter.value);
+        
+        // Log filtered results
+        console.log('Filtered failures:', filteredFailures);
         
         // Display filtered failures
         displayFailures(filteredFailures);
@@ -790,21 +839,79 @@ async function selectDocument(doc) {
         // Display the details
         displayDetails(jsonResult.data, dbData);
         
-        // Always add the Fix Rates button for testing
-        const fixButton = document.createElement('button');
-        fixButton.className = 'btn btn-primary mt-3';
-        fixButton.id = 'fix-rate-button';
-        fixButton.textContent = 'Fix Rate Issues';
-        fixButton.onclick = function() {
-            // Call the rate correction modal function
-            showRateCorrectionModal(jsonResult.data);
-        };
-        
-        // Add button after validation messages
-        const messagesElement = hcfaDetails.querySelector('.card-body');
-        if (messagesElement) {
-            messagesElement.appendChild(fixButton);
-        }
+        // Wait a short moment to ensure all scripts are loaded
+        setTimeout(() => {
+            // Create a button container div
+            const buttonContainer = document.createElement('div');
+            buttonContainer.className = 'd-flex gap-2 mt-3';
+            buttonContainer.id = 'action-buttons';
+
+            // Add the Fix Rates button for in-network providers
+            const fixButton = document.createElement('button');
+            fixButton.className = 'btn btn-primary';
+            fixButton.id = 'fix-rate-button';
+            fixButton.textContent = 'Fix Rate Issues';
+            fixButton.onclick = function() {
+                console.log('Rate correction button clicked');
+                console.log('showRateCorrectionModal available:', typeof window.showRateCorrectionModal === 'function');
+                
+                // Check if the rate correction function exists
+                if (typeof window.showRateCorrectionModal === 'function') {
+                    // Call the rate correction modal function with the current document data
+                    window.showRateCorrectionModal(jsonResult.data);
+                } else {
+                    console.error('Rate correction function not found');
+                    showErrorMessage('Error: Rate correction functionality not loaded. Please refresh the page and try again.');
+                }
+            };
+
+            // Add the OTA Rates button for out-of-network providers
+            const otaButton = document.createElement('button');
+            otaButton.className = 'btn btn-secondary';
+            otaButton.id = 'add-ota-button';
+            otaButton.textContent = 'Add OTA Rates';
+            otaButton.onclick = function() {
+                console.log('OTA correction button clicked');
+                console.log('showOTACorrectionModal available:', typeof window.showOTACorrectionModal === 'function');
+                
+                // Check if the OTA correction function exists
+                if (typeof window.showOTACorrectionModal === 'function') {
+                    // Call the OTA correction modal function with both JSON and database data
+                    const combinedData = {
+                        ...jsonResult.data,
+                        database_details: dbData
+                    };
+                    window.showOTACorrectionModal(combinedData);
+                } else {
+                    console.error('OTA correction function not found');
+                    showErrorMessage('Error: OTA correction functionality not loaded. Please refresh the page and try again.');
+                }
+            };
+
+            // Add the Bill Resolved button
+            const resolveButton = document.createElement('button');
+            resolveButton.className = 'btn btn-success';
+            resolveButton.id = 'resolve-bill-button';
+            resolveButton.textContent = 'Bill Resolved';
+            resolveButton.onclick = function() {
+                if (confirm('Are you sure you want to mark this bill as resolved? This will move the file back to staging.')) {
+                    resolveBill({
+                        filename: doc.filename
+                    });
+                }
+            };
+
+            // Add all buttons to the container
+            buttonContainer.appendChild(fixButton);
+            buttonContainer.appendChild(otaButton);
+            buttonContainer.appendChild(resolveButton);
+
+            // Add the button container after validation messages
+            const messagesElement = hcfaDetails.querySelector('.card-body');
+            if (messagesElement) {
+                messagesElement.appendChild(buttonContainer);
+            }
+        }, 100);
         
     } catch (error) {
         console.error('Error selecting document:', error);
@@ -1271,6 +1378,9 @@ function updateStatusFilter(failures) {
         }
     });
     
+    // Add OTA option
+    uniqueTypes.add('OTA');
+    
     // Log the unique types for debugging
     console.log('Unique failure types:', Array.from(uniqueTypes));
     
@@ -1299,6 +1409,30 @@ function filterFailuresByStatus(failures, selectedStatus) {
     
     return failures.filter(failure => {
         if (!failure.validation_messages) return false;
+        
+        // Check for OTA filter
+        if (selectedStatus.toLowerCase() === 'ota') {
+            console.log('Checking OTA filter for failure:', failure);
+            
+            // Must have rate validation failure
+            const hasRateFailure = failure.validation_messages.some(msg => {
+                const isRate = msg.includes('RATE Validation Failed') || 
+                       msg.includes('Rate validation failed') ||
+                       msg.toLowerCase().includes('rate validation failed');
+                console.log('Rate failure check:', { msg, isRate });
+                return isRate;
+            });
+            
+            // Must be out of network
+            const networkStatus = failure.database_details?.provider_details?.network_status;
+            const isOutOfNetwork = networkStatus === 'Out of Network';
+            console.log('Network status check:', { networkStatus, isOutOfNetwork });
+            
+            const matches = hasRateFailure && isOutOfNetwork;
+            console.log('OTA filter result:', { hasRateFailure, isOutOfNetwork, matches });
+            
+            return matches;
+        }
         
         // Check for rate validation messages
         if (selectedStatus.toLowerCase() === 'rate') {
@@ -1347,48 +1481,133 @@ function displayFailures(failures) {
     failures.forEach(failure => {
         const div = document.createElement('div');
         div.className = 'document-item';
-        div.dataset.filename = failure.file_name || '';
+        div.dataset.filename = failure.filename || '';
         
         // Create status badges for each failure type
         const statusBadges = [];
         
-        // Check validation messages for rate, line items, and intent failures
+        // Check validation messages for different failure types
         if (failure.validation_messages) {
             failure.validation_messages.forEach(msg => {
-                if (msg.includes('RATE Validation Failed') || 
-                    msg.includes('Rate validation failed') ||
-                    msg.toLowerCase().includes('rate validation failed')) {
-                    statusBadges.push('<span class="badge bg-danger me-1">RATE</span>');
+                const msgLower = msg.toLowerCase();
+                
+                // Rate validation failures
+                if (msgLower.includes('rate validation failed') || 
+                    msgLower.includes('rate issue') ||
+                    msgLower.includes('rate problem')) {
+                    statusBadges.push('<span class="badge bg-danger">RATE</span>');
                 }
-                if (msg.includes('LINE_ITEMS Validation Failed') || 
-                    msg.includes('Line Items Validation Failed') ||
-                    msg.toLowerCase().includes('line items validation failed')) {
-                    statusBadges.push('<span class="badge bg-danger me-1">LINE_ITEMS</span>');
+                
+                // Line items validation failures
+                if (msgLower.includes('line items validation failed') || 
+                    msgLower.includes('line items issue') ||
+                    msgLower.includes('line items problem')) {
+                    statusBadges.push('<span class="badge bg-danger">LINE_ITEMS</span>');
                 }
-                if (msg.includes('INTENT Validation Failed') || 
-                    msg.includes('Intent Validation Failed') ||
-                    msg.toLowerCase().includes('intent validation failed') ||
-                    msg.toLowerCase().includes('intent mismatch')) {
-                    statusBadges.push('<span class="badge bg-danger me-1">INTENT</span>');
+                
+                // Intent validation failures
+                if (msgLower.includes('intent validation failed') || 
+                    msgLower.includes('intent issue') ||
+                    msgLower.includes('intent mismatch')) {
+                    statusBadges.push('<span class="badge bg-danger">INTENT</span>');
+                }
+                
+                // Bundle validation failures
+                if (msgLower.includes('bundle validation failed') || 
+                    msgLower.includes('bundle issue') ||
+                    msgLower.includes('bundle problem')) {
+                    statusBadges.push('<span class="badge bg-warning">BUNDLE</span>');
+                }
+                
+                // Modifier validation failures
+                if (msgLower.includes('modifier validation failed') || 
+                    msgLower.includes('modifier issue') ||
+                    msgLower.includes('invalid modifier')) {
+                    statusBadges.push('<span class="badge bg-warning">MODIFIER</span>');
+                }
+                
+                // Units validation failures
+                if (msgLower.includes('units validation failed') || 
+                    msgLower.includes('units issue') ||
+                    msgLower.includes('invalid units')) {
+                    statusBadges.push('<span class="badge bg-warning">UNITS</span>');
+                }
+                
+                // CPT validation failures
+                if (msgLower.includes('cpt validation failed') || 
+                    msgLower.includes('cpt issue') ||
+                    msgLower.includes('invalid cpt')) {
+                    statusBadges.push('<span class="badge bg-warning">CPT</span>');
+                }
+                
+                // Diagnosis validation failures
+                if (msgLower.includes('diagnosis validation failed') || 
+                    msgLower.includes('diagnosis issue') ||
+                    msgLower.includes('invalid diagnosis')) {
+                    statusBadges.push('<span class="badge bg-warning">DIAGNOSIS</span>');
+                }
+                
+                // Provider validation failures
+                if (msgLower.includes('provider validation failed') || 
+                    msgLower.includes('provider issue') ||
+                    msgLower.includes('invalid provider')) {
+                    statusBadges.push('<span class="badge bg-warning">PROVIDER</span>');
+                }
+                
+                // Patient validation failures
+                if (msgLower.includes('patient validation failed') || 
+                    msgLower.includes('patient issue') ||
+                    msgLower.includes('invalid patient')) {
+                    statusBadges.push('<span class="badge bg-warning">PATIENT</span>');
+                }
+                
+                // Date validation failures
+                if (msgLower.includes('date validation failed') || 
+                    msgLower.includes('date issue') ||
+                    msgLower.includes('invalid date')) {
+                    statusBadges.push('<span class="badge bg-warning">DATE</span>');
+                }
+                
+                // Amount validation failures
+                if (msgLower.includes('amount validation failed') || 
+                    msgLower.includes('amount issue') ||
+                    msgLower.includes('invalid amount')) {
+                    statusBadges.push('<span class="badge bg-warning">AMOUNT</span>');
+                }
+                
+                // Network validation failures
+                if (msgLower.includes('network validation failed') || 
+                    msgLower.includes('network issue') ||
+                    msgLower.includes('invalid network')) {
+                    statusBadges.push('<span class="badge bg-info">NETWORK</span>');
                 }
             });
         }
         
-        // Add any other failure types
+        // Add any other failure types from the failure_types array
         if (failure.failure_types) {
             failure.failure_types.forEach(type => {
-                if (type !== 'RATE' && type !== 'LINE_ITEMS' && type !== 'INTENT') { // Don't add duplicates
-                    statusBadges.push(`<span class="badge bg-danger me-1">${type}</span>`);
+                // Only add if not already added from validation messages
+                if (!statusBadges.some(badge => badge.includes(type))) {
+                    const badgeClass = type === 'NETWORK' ? 'bg-info' : 
+                                     (type === 'RATE' || type === 'LINE_ITEMS' || type === 'INTENT') ? 'bg-danger' : 'bg-warning';
+                    statusBadges.push(`<span class="badge ${badgeClass}">${type}</span>`);
                 }
             });
         }
         
+        // Get patient name from the data
+        const patientName = failure.patient_info?.patient_name || 
+                          failure.patient_name || 
+                          'Unknown Patient';
+        
+        // Create the HTML with patient name and badges
         div.innerHTML = `
-            <div class="d-flex justify-content-between align-items-center p-2">
-                <div class="text-truncate flex-grow-1">
-                    ${failure.file_name || 'Unknown File'}
+            <div class="d-flex flex-column">
+                <div class="text-truncate">
+                    ${patientName}
                 </div>
-                <div class="ms-2">
+                <div class="d-flex flex-wrap">
                     ${statusBadges.join('')}
                 </div>
             </div>

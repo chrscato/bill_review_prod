@@ -1,730 +1,142 @@
-Backend Implementation for Rate Correction Feature
-This document provides comprehensive instructions to implement the backend components for the rate correction feature in your Healthcare Bill Review System. The implementation will allow users to update rates for in-network providers, both at the individual CPT code level and by category.
-Overview
-The backend implementation consists of two main components:
-
-A RateService class that interacts with the database to manage provider rates
-Flask API endpoints that handle rate correction requests from the frontend
-
-The implementation uses the existing ppo table in your database to store and update provider rates.
-1. Create the Rate Service Class
-First, create a new file for the rate service:
-pythonCopy# Create this file: core/services/rate_service.py
-
-import sqlite3
-import logging
-from pathlib import Path
-from typing import Dict, List, Tuple, Any, Union, Set
-
-logger = logging.getLogger(__name__)
-
-class RateService:
-    """
-    Service for managing provider rates in the database.
-    Handles rate lookups and updates for individual CPT codes and categories.
-    """
-    
-    # CPT code categories mapping - must match JavaScript categories
-    PROCEDURE_CATEGORIES = {
-        "MRI w/o": [
-            "70551", "72141", "73721", "73718", "70540", "72195", 
-            "72146", "73221", "73218"
-        ],
-        "MRI w/": [
-            "70552", "72142", "73722", "70542", "72196", 
-            "72147", "73222", "73219"
-        ],
-        "MRI w/&w/o": [
-            "70553", "72156", "73723", "70543", "72197", 
-            "72157", "73223", "73220"
-        ],
-        "CT w/o": [
-            "74176", "74150", "72125", "70450", "73700", 
-            "72131", "70486", "70480", "72192", "70490", 
-            "72128", "71250", "73200"
-        ],
-        "CT w/": [
-            "74177", "74160", "72126", "70460", "73701", 
-            "72132", "70487", "70481", "72193", "70491", 
-            "72129", "71260", "73201"
-        ],
-        "CT w/&w/o": [
-            "74178", "74170", "72127", "70470", "73702", 
-            "72133", "70488", "70482", "72194", "70492", 
-            "72130", "71270", "73202"
-        ],
-        "Xray": [
-            "74010", "74000", "74020", "76080", "73050", 
-            "73600", "73610", "77072", "77073", "73650", 
-            "72040", "72050", "71010", "71021", "71023", 
-            "71022", "71020", "71030", "71034", "71035", "73130"
-        ],
-        "Ultrasound": [
-            "76700", "76705", "76770", "76775", "76536",
-            "76604", "76642", "76856", "76857", "76870"
-        ]
-    }
-    
-    def __init__(self, db_path: Union[str, Path]):
-        """
-        Initialize the rate service with a database path.
-        
-        Args:
-            db_path: Path to the SQLite database
-        """
-        self.db_path = Path(db_path)
-        
-        # Set up logging if not already configured
-        if not logger.handlers:
-            handler = logging.StreamHandler()
-            formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
-            handler.setFormatter(formatter)
-            logger.addHandler(handler)
-            logger.setLevel(logging.INFO)
-        
-        # Verify database exists
-        if not self.db_path.exists():
-            logger.error(f"Database file not found: {self.db_path}")
-            raise FileNotFoundError(f"Database file not found: {self.db_path}")
-            
-        # Verify ppo table exists
-        self._verify_ppo_table()
-    
-    def _verify_ppo_table(self):
-        """
-        Verify that the ppo table exists in the database.
-        Creates the table if it doesn't exist.
-        """
-        try:
-            with self._get_connection() as conn:
-                cursor = conn.cursor()
-                
-                # Check if the table exists
-                cursor.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='ppo'")
-                if not cursor.fetchone():
-                    logger.warning("PPO table not found in database, creating it...")
-                    
-                    # Create the ppo table
-                    cursor.execute("""
-                        CREATE TABLE ppo (
-                            id INTEGER PRIMARY KEY AUTOINCREMENT,
-                            RenderingState TEXT,
-                            TIN TEXT,
-                            provider_name TEXT,
-                            proc_cd TEXT,
-                            modifier TEXT,
-                            proc_desc TEXT,
-                            proc_category TEXT,
-                            rate REAL,
-                            UNIQUE(TIN, proc_cd, modifier)
-                        )
-                    """)
-                    conn.commit()
-                    logger.info("PPO table created successfully")
-                    
-                else:
-                    # Verify all required columns exist
-                    cursor.execute("PRAGMA table_info(ppo)")
-                    columns = {row['name'] for row in cursor.fetchall()}
-                    
-                    required_columns = {
-                        'id', 'RenderingState', 'TIN', 'provider_name', 'proc_cd',
-                        'modifier', 'proc_category', 'rate'
-                    }
-                    
-                    missing_columns = required_columns - columns
-                    if missing_columns:
-                        # We could add missing columns here, but that's more complex
-                        # For now, just report the issue
-                        logger.error(f"PPO table is missing required columns: {missing_columns}")
-                        raise ValueError(f"PPO table is missing required columns: {missing_columns}")
-        
-        except sqlite3.Error as e:
-            logger.error(f"Database error when verifying PPO table: {e}")
-            raise
-    
-    def _get_connection(self) -> sqlite3.Connection:
-        """
-        Get a SQLite database connection with row factory enabled.
-        
-        Returns:
-            sqlite3.Connection: Database connection
-        """
-        try:
-            conn = sqlite3.connect(self.db_path)
-            conn.row_factory = sqlite3.Row
-            return conn
-        except sqlite3.Error as e:
-            logger.error(f"Error connecting to database: {e}")
-            raise
-    
-    def get_provider_rates(self, tin: str) -> List[Dict[str, Any]]:
-        """
-        Get all rates for a provider by TIN.
-        
-        Args:
-            tin: Provider's Tax ID Number
-        
-        Returns:
-            List of dictionaries containing rate information
-        """
-        try:
-            # Clean TIN - remove non-digits
-            clean_tin = ''.join(c for c in tin if c.isdigit())
-            
-            # Validate TIN format
-            if len(clean_tin) != 9:
-                logger.warning(f"Invalid TIN format: {tin}")
-                return []
-            
-            with self._get_connection() as conn:
-                cursor = conn.cursor()
-                
-                query = """
-                SELECT proc_cd, modifier, proc_category, rate
-                FROM ppo
-                WHERE TRIM(TIN) = ?
-                """
-                
-                cursor.execute(query, (clean_tin,))
-                rows = cursor.fetchall()
-                
-                # Convert to list of dictionaries
-                return [
-                    {
-                        'cpt_code': row['proc_cd'],
-                        'modifier': row['modifier'],
-                        'category': row['proc_category'],
-                        'rate': row['rate']
-                    }
-                    for row in rows
-                ]
-        
-        except sqlite3.Error as e:
-            logger.error(f"Database error getting provider rates: {e}")
-            return []
-    
-    def get_provider_info(self, tin: str) -> Dict[str, Any]:
-        """
-        Get provider information by TIN.
-        
-        Args:
-            tin: Provider's Tax ID Number
-        
-        Returns:
-            Dictionary with provider information or empty dict if not found
-        """
-        try:
-            # Clean TIN - remove non-digits
-            clean_tin = ''.join(c for c in tin if c.isdigit())
-            
-            # Validate TIN format
-            if len(clean_tin) != 9:
-                logger.warning(f"Invalid TIN format: {tin}")
-                return {}
-            
-            with self._get_connection() as conn:
-                cursor = conn.cursor()
-                
-                query = """
-                SELECT DISTINCT provider_name
-                FROM ppo
-                WHERE TRIM(TIN) = ?
-                LIMIT 1
-                """
-                
-                cursor.execute(query, (clean_tin,))
-                row = cursor.fetchone()
-                
-                if row:
-                    return {
-                        'provider_name': row['provider_name'],
-                        'tin': clean_tin
-                    }
-                
-                # If not found in ppo, check providers table
-                query = """
-                SELECT "Name" as provider_name
-                FROM providers
-                WHERE TRIM(TIN) = ?
-                LIMIT 1
-                """
-                
-                cursor.execute(query, (clean_tin,))
-                row = cursor.fetchone()
-                
-                if row:
-                    return {
-                        'provider_name': row['provider_name'],
-                        'tin': clean_tin
-                    }
-                
-                return {'tin': clean_tin}
-        
-        except sqlite3.Error as e:
-            logger.error(f"Database error getting provider info: {e}")
-            return {}
-    
-    def update_line_item_rates(
-        self, 
-        tin: str, 
-        line_items: List[Dict],
-        state: str = 'XX'  # Default state code
-    ) -> Tuple[bool, str, List[Dict]]:
-        """
-        Update rates for specific line items.
-        
-        Args:
-            tin: Provider's Tax ID Number
-            line_items: List of dictionaries with cpt_code and rate
-            state: State code (default: 'XX')
-        
-        Returns:
-            Tuple of (success, message, updated_items)
-        """
-        if not line_items:
-            return False, "No line items provided", []
-        
-        # Clean TIN - remove non-digits
-        clean_tin = ''.join(c for c in tin if c.isdigit())
-        
-        # Validate TIN format
-        if len(clean_tin) != 9:
-            return False, f"Invalid TIN format: {tin}", []
-        
-        # Get provider info
-        provider_info = self.get_provider_info(clean_tin)
-        provider_name = provider_info.get('provider_name', 'Unknown Provider')
-        
-        updated_items = []
-        
-        try:
-            with self._get_connection() as conn:
-                # Start a transaction
-                conn.execute("BEGIN TRANSACTION")
-                cursor = conn.cursor()
-                
-                for item in line_items:
-                    cpt_code = item.get('cpt_code')
-                    rate = item.get('rate')
-                    
-                    if not cpt_code or rate is None:
-                        continue
-                    
-                    # Determine category for the CPT code
-                    category = self._get_category_for_code(cpt_code)
-                    
-                    # Determine if there's an existing record
-                    cursor.execute(
-                        "SELECT COUNT(*) as count FROM ppo WHERE TRIM(TIN) = ? AND TRIM(proc_cd) = ?",
-                        (clean_tin, cpt_code)
-                    )
-                    result = cursor.fetchone()
-                    exists = result['count'] > 0
-                    
-                    if exists:
-                        # Update existing record
-                        cursor.execute("""
-                            UPDATE ppo 
-                            SET rate = ?, 
-                                proc_category = ?,
-                                RenderingState = ?
-                            WHERE TRIM(TIN) = ? AND TRIM(proc_cd) = ?
-                        """, (rate, category, state, clean_tin, cpt_code))
-                    else:
-                        # Insert new record
-                        cursor.execute("""
-                            INSERT INTO ppo 
-                            (RenderingState, TIN, provider_name, proc_cd, 
-                            modifier, proc_category, rate)
-                            VALUES (?, ?, ?, ?, ?, ?, ?)
-                        """, (state, clean_tin, provider_name, cpt_code, 
-                             '', category, rate))
-                    
-                    updated_items.append({
-                        'cpt_code': cpt_code,
-                        'rate': rate,
-                        'category': category
-                    })
-                
-                # Commit the transaction
-                conn.commit()
-                
-                message = f"Updated {len(updated_items)} rates for provider {provider_name} (TIN: {clean_tin})"
-                logger.info(message)
-                return True, message, updated_items
-                
-        except sqlite3.Error as e:
-            logger.error(f"Database error updating line item rates: {e}")
-            return False, f"Database error: {str(e)}", []
-        except Exception as e:
-            logger.error(f"Error updating line item rates: {e}")
-            return False, f"Error: {str(e)}", []
-    
-    def update_category_rates(
-        self, 
-        tin: str, 
-        category_rates: Dict[str, float],
-        state: str = 'XX'  # Default state code
-    ) -> Tuple[bool, str, Dict[str, List[str]]]:
-        """
-        Update rates for entire categories of CPT codes.
-        
-        Args:
-            tin: Provider's Tax ID Number
-            category_rates: Dictionary mapping categories to rates
-            state: State code (default: 'XX')
-        
-        Returns:
-            Tuple of (success, message, updated_categories)
-        """
-        if not category_rates:
-            return False, "No category rates provided", {}
-        
-        # Clean TIN - remove non-digits
-        clean_tin = ''.join(c for c in tin if c.isdigit())
-        
-        # Validate TIN format
-        if len(clean_tin) != 9:
-            return False, f"Invalid TIN format: {tin}", {}
-        
-        # Get provider info
-        provider_info = self.get_provider_info(clean_tin)
-        provider_name = provider_info.get('provider_name', 'Unknown Provider')
-        
-        updated_categories = {}
-        total_codes_updated = 0
-        
-        try:
-            with self._get_connection() as conn:
-                # Start a transaction
-                conn.execute("BEGIN TRANSACTION")
-                cursor = conn.cursor()
-                
-                for category, rate in category_rates.items():
-                    # Get CPT codes for this category
-                    cpt_codes = self.PROCEDURE_CATEGORIES.get(category, [])
-                    
-                    if not cpt_codes:
-                        logger.warning(f"No CPT codes found for category: {category}")
-                        continue
-                    
-                    updated_categories[category] = []
-                    
-                    for cpt_code in cpt_codes:
-                        # Determine if there's an existing record
-                        cursor.execute(
-                            "SELECT COUNT(*) as count FROM ppo WHERE TRIM(TIN) = ? AND TRIM(proc_cd) = ?",
-                            (clean_tin, cpt_code)
-                        )
-                        result = cursor.fetchone()
-                        exists = result['count'] > 0
-                        
-                        if exists:
-                            # Update existing record
-                            cursor.execute("""
-                                UPDATE ppo 
-                                SET rate = ?, 
-                                    proc_category = ?,
-                                    RenderingState = ?
-                                WHERE TRIM(TIN) = ? AND TRIM(proc_cd) = ?
-                            """, (rate, category, state, clean_tin, cpt_code))
-                        else:
-                            # Insert new record
-                            cursor.execute("""
-                                INSERT INTO ppo 
-                                (RenderingState, TIN, provider_name, proc_cd, 
-                                modifier, proc_category, rate)
-                                VALUES (?, ?, ?, ?, ?, ?, ?)
-                            """, (state, clean_tin, provider_name, cpt_code, 
-                                 '', category, rate))
-                        
-                        updated_categories[category].append(cpt_code)
-                        total_codes_updated += 1
-                
-                # Commit the transaction
-                conn.commit()
-                
-                message = (f"Updated {total_codes_updated} CPT codes across "
-                          f"{len(category_rates)} categories for provider "
-                          f"{provider_name} (TIN: {clean_tin})")
-                
-                logger.info(message)
-                return True, message, updated_categories
-                
-        except sqlite3.Error as e:
-            logger.error(f"Database error updating category rates: {e}")
-            return False, f"Database error: {str(e)}", {}
-        except Exception as e:
-            logger.error(f"Error updating category rates: {e}")
-            return False, f"Error: {str(e)}", {}
-    
-    def _get_category_for_code(self, cpt_code: str) -> str:
-        """
-        Determine which category a CPT code belongs to.
-        
-        Args:
-            cpt_code: CPT code to categorize
-        
-        Returns:
-            Category name or 'Uncategorized'
-        """
-        for category, codes in self.PROCEDURE_CATEGORIES.items():
-            if cpt_code in codes:
-                return category
-        
-        # If not found in any category, try to determine based on code prefix
-        cpt_prefix = cpt_code[:3]
-        
-        # Simple categorization based on CPT code prefix
-        if cpt_prefix in ['705', '707', '721', '722', '723', '732', '737']:
-            if cpt_code[3:5] in ['51', '52', '53']:  # MRI codes often end with these
-                return "MRI w/o"
-            elif cpt_code[3:5] in ['21', '22', '23']:  # CT codes often end with these
-                return "CT w/o"
-        
-        return "Uncategorized"
-2. Add Flask API Routes
-Now add the API routes to handle rate correction requests. Add this to your existing Flask application:
-pythonCopy# Add to web/app.py or create a new routes file: web/routes/rate_routes.py
-
-from flask import jsonify, request
-from core.services.rate_service import RateService
-import logging
-from config import settings
-
-logger = logging.getLogger(__name__)
-
-# You can either add these routes directly to app.py or 
-# create a Blueprint and register it
-
-@app.route('/api/rates/correct/line-items', methods=['POST'])
-def correct_line_item_rates():
-    """
-    API endpoint to update rates for specific line items.
-    
-    Expected JSON payload:
-    {
-        "tin": "123456789",
-        "line_items": [
-            {"cpt_code": "70553", "rate": 800.00},
-            {"cpt_code": "73221", "rate": 600.00}
-        ]
-    }
-    """
+Bill Resolved Feature Implementation Instructions
+This document provides structured instructions for implementing a "Bill Resolved" feature in the Healthcare Bill Review System. This feature allows users to mark a failed bill as resolved and move it back to the staging directory.
+1. Add a new route in app.py
+Add this endpoint to your web/app.py file to handle the "Bill Resolved" action:
+pythonCopy@app.route('/api/failures/<filename>/resolve', methods=['POST'])
+def resolve_failure(filename):
+    """API endpoint to mark a failure as resolved and move it back to staging."""
     try:
-        data = request.get_json()
+        logger.info(f"Resolving failure: {filename}")
         
-        if not data:
-            return jsonify({'error': 'No data provided'}), 400
+        # Construct paths
+        fails_path = settings.FAILS_PATH / filename
+        staging_path = settings.JSON_PATH / filename
         
-        tin = data.get('tin')
-        line_items = data.get('line_items', [])
-        
-        if not tin:
-            return jsonify({'error': 'Provider TIN is required'}), 400
-        
-        if not line_items:
-            return jsonify({'error': 'No line items provided'}), 400
-        
-        # Initialize the rate service
-        rate_service = RateService(settings.DB_PATH)
-        
-        # Update rates
-        success, message, updated_items = rate_service.update_line_item_rates(tin, line_items)
-        
-        if success:
-            return jsonify({
-                'status': 'success',
-                'message': message,
-                'updated_items': updated_items
-            })
-        else:
+        if not fails_path.exists():
+            logger.error(f"Failure file not found: {fails_path}")
             return jsonify({
                 'status': 'error',
-                'error': message
-            }), 500
-    
-    except Exception as e:
-        logger.error(f"Error in line item rate correction: {e}")
-        return jsonify({
-            'status': 'error',
-            'error': f"An unexpected error occurred: {str(e)}"
-        }), 500
-
-@app.route('/api/rates/correct/category', methods=['POST'])
-def correct_category_rates():
-    """
-    API endpoint to update rates by category.
-    
-    Expected JSON payload:
-    {
-        "tin": "123456789",
-        "category_rates": {
-            "MRI w/o": 800.00,
-            "CT w/o": 600.00
-        }
-    }
-    """
-    try:
-        data = request.get_json()
-        
-        if not data:
-            return jsonify({'error': 'No data provided'}), 400
-        
-        tin = data.get('tin')
-        category_rates = data.get('category_rates', {})
-        
-        if not tin:
-            return jsonify({'error': 'Provider TIN is required'}), 400
-        
-        if not category_rates:
-            return jsonify({'error': 'No category rates provided'}), 400
-        
-        # Initialize the rate service
-        rate_service = RateService(settings.DB_PATH)
-        
-        # Update rates
-        success, message, updated_categories = rate_service.update_category_rates(tin, category_rates)
-        
-        if success:
-            return jsonify({
-                'status': 'success',
-                'message': message,
-                'updated_categories': updated_categories
-            })
-        else:
-            return jsonify({
-                'status': 'error',
-                'error': message
-            }), 500
-    
-    except Exception as e:
-        logger.error(f"Error in category rate correction: {e}")
-        return jsonify({
-            'status': 'error',
-            'error': f"An unexpected error occurred: {str(e)}"
-        }), 500
-
-# Optional: Add an endpoint to get provider rates
-@app.route('/api/rates/provider/<tin>', methods=['GET'])
-def get_provider_rates(tin):
-    """Get existing rates for a provider."""
-    try:
-        # Initialize the rate service
-        rate_service = RateService(settings.DB_PATH)
-        
-        # Get rates
-        rates = rate_service.get_provider_rates(tin)
-        provider_info = rate_service.get_provider_info(tin)
-        
+                'message': f'File not found: {filename}'
+            }), 404
+            
+        # Read the failure file
+        with open(fails_path, 'r') as f:
+            data = json.load(f)
+            
+        # Remove validation messages
+        if 'validation_messages' in data:
+            del data['validation_messages']
+            
+        # Write the modified data to the staging directory
+        with open(staging_path, 'w') as f:
+            json.dump(data, f, indent=2)
+            
+        # Remove the file from the fails directory
+        fails_path.unlink()
+            
+        logger.info(f"Successfully resolved failure: {filename}")
         return jsonify({
             'status': 'success',
-            'provider': provider_info,
-            'rates': rates,
-            'total_rates': len(rates)
+            'message': 'Failure resolved successfully'
         })
-    
+        
     except Exception as e:
-        logger.error(f"Error getting provider rates: {e}")
+        logger.error(f"Error resolving failure: {str(e)}")
         return jsonify({
             'status': 'error',
-            'error': f"An unexpected error occurred: {str(e)}"
+            'message': str(e)
         }), 500
-3. Update Imports in app.py
-Ensure your Flask application has the necessary imports:
-pythonCopy# Add to top of app.py if not already present
-from flask import jsonify, request
-from pathlib import Path
-import logging
-from config import settings
-4. Register Blueprint (Optional)
-If you prefer to use Blueprints for your routes, add the following:
-pythonCopy# Create a new file: web/routes/rate_routes.py with the routes from above, then:
-
-# In web/routes/rate_routes.py
-from flask import Blueprint, jsonify, request
-from core.services.rate_service import RateService
-import logging
-from config import settings
-
-rate_bp = Blueprint('rates', __name__)
-
-@rate_bp.route('/correct/line-items', methods=['POST'])
-def correct_line_item_rates():
-    # ... (same code as above)
-
-@rate_bp.route('/correct/category', methods=['POST'])
-def correct_category_rates():
-    # ... (same code as above)
-
-@rate_bp.route('/provider/<tin>', methods=['GET'])
-def get_provider_rates(tin):
-    # ... (same code as above)
-
-# Then in app.py:
-from web.routes.rate_routes import rate_bp
-app.register_blueprint(rate_bp, url_prefix='/api/rates')
-5. Testing the Implementation
-After implementing these changes, test the endpoints with sample data:
-
-Test line item correction:
-
-CopyPOST /api/rates/correct/line-items
-{
-    "tin": "123456789",
-    "line_items": [
-        {"cpt_code": "70553", "rate": 800.00},
-        {"cpt_code": "73221", "rate": 600.00}
-    ]
-}
-
-Test category correction:
-
-CopyPOST /api/rates/correct/category
-{
-    "tin": "123456789",
-    "category_rates": {
-        "MRI w/o": 750.00,
-        "CT w/o": 550.00
+2. Add the resolveBill function to main.js
+Add this function to your web/static/js/main.js file:
+javascriptCopy/**
+ * Mark a bill as resolved and move it back to staging
+ * @param {Object} failure - The failure data object
+ */
+async function resolveBill(failure) {
+    if (!failure || !failure.filename) {
+        showError('Invalid failure data');
+        return;
+    }
+    
+    try {
+        showLoading();
+        const filename = failure.filename;
+        
+        const response = await fetch(`/api/failures/${filename}/resolve`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json'
+            }
+        });
+        
+        if (!response.ok) {
+            const errorData = await response.json();
+            throw new Error(errorData.message || `HTTP error! status: ${response.status}`);
+        }
+        
+        const result = await response.json();
+        
+        showSuccess('Bill has been resolved and moved to staging');
+        
+        // Remove the failure from the document list
+        const failureElement = document.querySelector(`.document-item[data-filename="${filename}"]`);
+        if (failureElement) {
+            failureElement.remove();
+        }
+        
+        // Clear the details panels
+        document.getElementById('hcfaDetails').innerHTML = '<div class="alert alert-success">Bill has been resolved and moved to staging.</div>';
+        document.getElementById('dbDetails').innerHTML = '';
+        
+        // Remove from currentDocument
+        currentDocument = null;
+        
+    } catch (error) {
+        console.error('Error resolving bill:', error);
+        showError(`Failed to resolve bill: ${error.message}`);
+    } finally {
+        hideLoading();
     }
 }
+3. Add a Bill Resolved button to the UI
+Add this code to your web/static/js/main.js file in the displayDetails function, where you add other action buttons (near where you add the "Fix Rate Issues" button):
+javascriptCopy// Add the Bill Resolved button
+const resolveButton = document.createElement('button');
+resolveButton.className = 'btn btn-success mt-3 ms-2';
+resolveButton.id = 'resolve-bill-button';
+resolveButton.textContent = 'Bill Resolved';
+resolveButton.onclick = function() {
+    if (confirm('Are you sure you want to mark this bill as resolved? This will move the file back to staging.')) {
+        resolveBill(jsonDetails);
+    }
+};
 
-Test getting provider rates:
+// Add button after validation messages
+const messagesElement = hcfaDetails.querySelector('.card-body');
+if (messagesElement) {
+    messagesElement.appendChild(resolveButton);
+}
+4. Add CSS styles for the button
+Add these styles to your web/static/css/style.css file:
+cssCopy#resolve-bill-button {
+    background-color: #28a745;
+    color: white;
+    font-weight: bold;
+    transition: all 0.2s;
+}
 
-CopyGET /api/rates/provider/123456789
-Additional Notes
+#resolve-bill-button:hover {
+    background-color: #218838;
+    transform: translateY(-2px);
+    box-shadow: 0 2px 5px rgba(0,0,0,0.2);
+}
+Implementation Notes
 
-Database Structure:
+This feature adds a "Bill Resolved" button to the UI for failed bills
+When clicked, it removes the validation messages from the JSON file
+The file is moved from the fails directory back to the staging directory
+The UI is updated to reflect that the bill has been resolved
+The bill is removed from the list of failures in the UI
 
-The implementation uses the ppo table to store rates
-If the table doesn't exist, it will be created automatically
-The table has a UNIQUE constraint on (TIN, proc_cd, modifier) to prevent duplicates
-
-
-Error Handling:
-
-All operations are wrapped in try/except blocks
-Detailed error messages are logged and returned to the client
-
-
-Data Validation:
-
-TIN is validated to ensure it contains 9 digits
-Rate values are assumed to be correctly validated by the frontend
-
-
-Security Considerations:
-
-Input validation is performed to prevent SQL injection
-In a production environment, you should add authentication to these endpoints
-
-
-Performance:
-
-Database operations use transactions for atomicity
-For category updates with many CPT codes, consider adding progress feedback
-
-
-
-Let me know if you need any modifications or have questions about the implementation!
+Make sure your settings.JSON_PATH points to the correct staging directory:
+CopyC:\Users\ChristopherCato\OneDrive - clarity-dx.com\Documents\Bill_Review_INTERNAL\scripts\VA

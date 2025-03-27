@@ -12,6 +12,7 @@ from flask_cors import CORS
 import os
 from core.services.normalizer import normalize_hcfa_format
 from web.routes.rate_routes import rate_bp  # Import the rate routes blueprint
+from web.routes.ota_routes import ota_bp
 
 app = Flask(__name__)
 CORS(app)  # Enable CORS for all routes
@@ -27,6 +28,7 @@ hcfa_service = HCFAService()
 
 # Register blueprints
 app.register_blueprint(rate_bp, url_prefix='/api/rates')
+app.register_blueprint(ota_bp, url_prefix='/api/otas')
 
 @contextmanager
 def get_db_connection():
@@ -79,7 +81,7 @@ def get_failed_files():
                 data['failure_types'] = list(failure_types)
                 
                 # Add file info
-                data['file_name'] = file_path.name
+                data['filename'] = file_path.name
                 data['order_id'] = data.get('Order_ID', '')
                 
                 failed_files.append(data)
@@ -89,7 +91,7 @@ def get_failed_files():
                 continue
         
         # Sort by filename
-        failed_files.sort(key=lambda x: x['file_name'])
+        failed_files.sort(key=lambda x: x['filename'])
         
         return {
             'status': 'success',
@@ -217,6 +219,51 @@ def update_failure_details(filename):
         
     except Exception as e:
         logger.error(f"Error updating file: {str(e)}")
+        return jsonify({
+            'status': 'error',
+            'message': str(e)
+        }), 500
+
+@app.route('/api/failures/<filename>/resolve', methods=['POST'])
+def resolve_failure(filename):
+    """API endpoint to mark a failure as resolved and move it back to staging."""
+    try:
+        logger.info(f"Resolving failure: {filename}")
+        
+        # Construct paths
+        fails_path = settings.FAILS_PATH / filename
+        staging_path = settings.JSON_PATH / filename
+        
+        if not fails_path.exists():
+            logger.error(f"Failure file not found: {fails_path}")
+            return jsonify({
+                'status': 'error',
+                'message': f'File not found: {filename}'
+            }), 404
+            
+        # Read the failure file
+        with open(fails_path, 'r') as f:
+            data = json.load(f)
+            
+        # Remove validation messages
+        if 'validation_messages' in data:
+            del data['validation_messages']
+            
+        # Write the modified data to the staging directory
+        with open(staging_path, 'w') as f:
+            json.dump(data, f, indent=2)
+            
+        # Remove the file from the fails directory
+        fails_path.unlink()
+            
+        logger.info(f"Successfully resolved failure: {filename}")
+        return jsonify({
+            'status': 'success',
+            'message': 'Failure resolved successfully'
+        })
+        
+    except Exception as e:
+        logger.error(f"Error resolving failure: {str(e)}")
         return jsonify({
             'status': 'error',
             'message': str(e)
