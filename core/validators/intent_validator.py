@@ -226,37 +226,39 @@ class ClinicalIntentValidator:
     
     def compare_intents(self, order_cpt_codes: Set[str], hcfa_cpt_codes: Set[str]) -> Dict:
         """
-        Compare clinical intent between order and HCFA data.
+        Compare clinical intents between order and HCFA CPT codes.
         
         Args:
-            order_cpt_codes: Set of CPT codes from order data
-            hcfa_cpt_codes: Set of CPT codes from HCFA data
+            order_cpt_codes: CPT codes from order
+            hcfa_cpt_codes: CPT codes from HCFA
             
         Returns:
             Dict: Comparison results
         """
-        # Classify intents
         order_intent = self.classify_intent(order_cpt_codes)
         hcfa_intent = self.classify_intent(hcfa_cpt_codes)
         
-        # Initialize result
         result = {
-            'order_intent': order_intent,
-            'hcfa_intent': hcfa_intent,
-            'status': 'UNKNOWN',
-            'message': '',
-            'details': {}
+            'status': 'PASS',
+            'message': 'Clinical intents match',
+            'details': {
+                'order_intent': order_intent,
+                'hcfa_intent': hcfa_intent
+            }
         }
         
-        # Compare intent categories
-        if order_intent['intent'] == 'unknown' or hcfa_intent['intent'] == 'unknown':
+        # Check for contrast mismatch
+        if (order_intent['intent'] == 'unknown' or hcfa_intent['intent'] == 'unknown'):
             result['status'] = 'INCOMPLETE_DATA'
             result['message'] = 'Unable to determine clinical intent from codes'
             return result
         
-        # Check if intents match
-        if order_intent['intent'] == hcfa_intent['intent']:
-            result['status'] = 'INTENT_MATCH'
+        # Check for contrast mismatch
+        if (order_intent['intent'] == hcfa_intent['intent'] and
+            order_intent['body_parts'] == hcfa_intent['body_parts'] and
+            order_intent['modalities'] == hcfa_intent['modalities']):
+            
+            result['status'] = 'FULL_MATCH'
             result['message'] = f"Clinical intent matches: {order_intent['intent']}"
             
             # Check body parts
@@ -333,3 +335,27 @@ class ClinicalIntentValidator:
         }
         
         return validation_result
+
+    def from_cpt_codes(self, cpt_codes: Set[str]) -> Dict:
+        """
+        Create a ClinicalIntent from a set of CPT codes.
+        
+        Args:
+            cpt_codes: Set of CPT codes to analyze
+            
+        Returns:
+            Dict: Classified clinical intent
+        """
+        intent = self.classify_intent(cpt_codes)
+        
+        # Determine contrast status from CPT codes
+        for cpt_code in cpt_codes:
+            contrast_status = ClinicalIntent.detect_contrast_from_cpt(cpt_code)
+            if contrast_status is not None:
+                intent['contrast'] = contrast_status
+                break
+        
+        # Calculate confidence based on number of codes
+        intent['confidence'] = 100 if len(cpt_codes) == 1 else max(30, 100 - (len(cpt_codes) - 1) * 10)
+        
+        return intent

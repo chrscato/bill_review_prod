@@ -48,200 +48,131 @@ class LineItemValidator:
                     "message": "No line items in HCFA data",
                     "messages": ["No line items in HCFA data"],
                     "details": {
-                        "hcfa_line_count": 0,
-                        "order_line_count": len(order_lines) if not order_lines.empty else 0,
-                        "matching_lines": [],
-                        "missing_from_order": [],
-                        "missing_from_hcfa": [],
-                        "diagnostic_info": {
-                            "error": "No line items in HCFA data to validate"
+                        "missing_codes": [],
+                        "mismatched_codes": [],
+                        "component_billing": {
+                            "is_component_billing": False,
+                            "component_type": None,
+                            "affected_line_items": [],
+                            "message": ""
                         }
                     }
                 }
-                
+            
             if order_lines.empty:
                 return {
                     "status": "FAIL",
                     "message": "No line items in order data",
                     "messages": ["No line items in order data"],
                     "details": {
-                        "hcfa_line_count": len(hcfa_lines),
-                        "order_line_count": 0,
-                        "matching_lines": [],
-                        "missing_from_order": [self._format_hcfa_line(line) for line in hcfa_lines],
-                        "missing_from_hcfa": [],
-                        "diagnostic_info": {
-                            "error": "No line items in order data to compare against"
+                        "missing_codes": [],
+                        "mismatched_codes": [],
+                        "component_billing": {
+                            "is_component_billing": False,
+                            "component_type": None,
+                            "affected_line_items": [],
+                            "message": ""
                         }
                     }
                 }
             
-            # Extract CPT codes from both datasets
-            hcfa_cpts = set(clean_cpt_code(line.get('cpt', '')) for line in hcfa_lines if line.get('cpt'))
-            order_cpts = set(clean_cpt_code(str(cpt)) for cpt in order_lines['CPT'].tolist() if pd.notna(cpt))
+            # Track component billing information
+            component_billing_info = {
+                "is_component_billing": False,
+                "component_type": None,
+                "affected_line_items": [],
+                "message": ""
+            }
             
-            # Match line items
-            matched_order_indices = set()
-            matched_hcfa_indices = set()
-            matches = []
+            # Track missing and mismatched codes
+            missing_codes = []
+            mismatched_codes = []
             
-            # First pass: exact CPT matches
+            # Process each HCFA line
             for h_idx, h_line in enumerate(hcfa_lines):
                 h_cpt = clean_cpt_code(h_line.get('cpt', ''))
                 if not h_cpt:
                     continue
-                    
-                for o_idx, o_row in order_lines.iterrows():
-                    if o_idx in matched_order_indices:
+                
+                # Find matching order line
+                match_found = False
+                matched_order_line = None
+                
+                for _, o_line in order_lines.iterrows():
+                    o_cpt = clean_cpt_code(o_line.get('CPT', ''))
+                    if not o_cpt:
                         continue
-                        
-                    o_cpt = clean_cpt_code(str(o_row['CPT']))
-                    if h_cpt == o_cpt:
-                        # Match found
-                        matches.append({
-                            'hcfa_idx': h_idx,
-                            'order_idx': o_idx,
-                            'cpt': h_cpt,
-                            'match_type': 'exact',
-                            'match_quality': 1.0,
-                            'hcfa_line': self._format_hcfa_line(h_line),
-                            'order_line': self._format_order_line(o_row)
-                        })
-                        matched_hcfa_indices.add(h_idx)
-                        matched_order_indices.add(o_idx)
+                    
+                    # Check for exact match or clinical equivalence
+                    if h_cpt == o_cpt or self._is_clinically_equivalent(h_cpt, o_cpt):
+                        match_found = True
+                        matched_order_line = o_line
                         break
-            
-            # Second pass: fuzzy matches for remaining unmatched lines
-            for h_idx, h_line in enumerate(hcfa_lines):
-                if h_idx in matched_hcfa_indices:
-                    continue
+                
+                # After finding a match, check component modifiers
+                if match_found:
+                    component_check = self._check_component_modifiers(h_line, matched_order_line)
                     
-                h_cpt = clean_cpt_code(h_line.get('cpt', ''))
-                if not h_cpt:
-                    continue
-                
-                best_match = None
-                best_score = 0.0
-                
-                for o_idx, o_row in order_lines.iterrows():
-                    if o_idx in matched_order_indices:
-                        continue
+                    if component_check["component_type"]:
+                        component_billing_info["is_component_billing"] = True
+                        component_billing_info["component_type"] = component_check["component_type"]
+                        component_billing_info["affected_line_items"].append({
+                            "index": h_idx,
+                            "cpt": h_cpt,
+                            "modifier": "TC" if component_check["component_type"] == "technical" else "26"
+                        })
                         
-                    o_cpt = clean_cpt_code(str(o_row['CPT']))
-                    
-                    # Check for clinical equivalence
-                    if self._is_clinically_equivalent(h_cpt, o_cpt):
-                        match_quality = 0.9  # High but not exact
-                        if match_quality > best_score:
-                            best_score = match_quality
-                            best_match = {
-                                'hcfa_idx': h_idx,
-                                'order_idx': o_idx,
-                                'cpt': h_cpt,
-                                'match_type': 'clinical_equivalent',
-                                'match_quality': match_quality,
-                                'hcfa_line': self._format_hcfa_line(h_line),
-                                'order_line': self._format_order_line(o_row)
-                            }
-                
-                if best_match and best_score >= 0.7:  # Only accept good matches
-                    matches.append(best_match)
-                    matched_hcfa_indices.add(h_idx)
-                    matched_order_indices.add(best_match['order_idx'])
+                    if component_check["has_component_mismatch"]:
+                        # Record the mismatch but don't necessarily fail the validation
+                        # Just note it for reporting
+                        if not component_billing_info["message"]:
+                            component_billing_info["message"] = component_check["message"]
+                else:
+                    missing_codes.append(h_cpt)
             
-            # Identify unmatched lines
-            unmatched_hcfa = [
-                self._format_hcfa_line(hcfa_lines[i]) 
-                for i in range(len(hcfa_lines)) 
-                if i not in matched_hcfa_indices
-            ]
-            
-            unmatched_order = [
-                self._format_order_line(order_lines.iloc[i]) 
-                for i in range(len(order_lines)) 
-                if i not in matched_order_indices
-            ]
-            
-            # Check for special cases - all CPTs missing from one side
-            all_hcfa_missing = len(matched_hcfa_indices) == 0
-            all_order_missing = len(matched_order_indices) == 0
-            
-            # Generate detailed validation result
+            # Generate result
             result = {
-                "status": "PASS" if not (unmatched_hcfa or unmatched_order) else "FAIL",
+                "status": "PASS" if not missing_codes else "FAIL",
+                "message": "Line items match" if not missing_codes else f"Missing {len(missing_codes)} line items",
+                "messages": [],
                 "details": {
-                    "hcfa_line_count": len(hcfa_lines),
-                    "order_line_count": len(order_lines),
-                    "matching_lines_count": len(matches),
-                    "matching_lines": matches,
-                    "missing_from_order": unmatched_hcfa,
-                    "missing_from_hcfa": unmatched_order,
-                    "diagnostic_info": {
-                        "all_hcfa_missing": all_hcfa_missing,
-                        "all_order_missing": all_order_missing,
-                        "hcfa_cpts": list(hcfa_cpts),
-                        "order_cpts": list(order_cpts)
-                    }
+                    "missing_codes": missing_codes,
+                    "mismatched_codes": mismatched_codes,
+                    "component_billing": component_billing_info
                 }
             }
             
-            # Create human-readable messages
-            messages = []
+            # Add messages
+            if missing_codes:
+                result["messages"].append(f"Missing {len(missing_codes)} line items: {', '.join(missing_codes)}")
             
-            if result["status"] == "PASS":
-                messages.append(f"All {len(matches)} line items matched successfully")
-            else:
-                if all_hcfa_missing:
-                    messages.append("None of the HCFA line items matched order data")
-                elif all_order_missing:
-                    messages.append("None of the order line items matched HCFA data")
+            # Update messages if this is a non-global bill
+            if component_billing_info["is_component_billing"]:
+                component_type = "technical component (TC)" if component_billing_info["component_type"] == "technical" else "professional component (26)"
+                
+                if result["status"] == "PASS":
+                    result["messages"].insert(0, f"Non-global bill validation passed ({component_type})")
                 else:
-                    if unmatched_hcfa:
-                        messages.append(f"{len(unmatched_hcfa)} HCFA line items not found in order data")
-                        for i, line in enumerate(unmatched_hcfa[:3]):
-                            messages.append(f"  - Missing in order: CPT {line.get('cpt')}")
-                        if len(unmatched_hcfa) > 3:
-                            messages.append(f"  - ... and {len(unmatched_hcfa) - 3} more")
-                    
-                    if unmatched_order:
-                        messages.append(f"{len(unmatched_order)} order line items not found in HCFA data")
-                        for i, line in enumerate(unmatched_order[:3]):
-                            messages.append(f"  - Missing in HCFA: CPT {line.get('cpt')}")
-                        if len(unmatched_order) > 3:
-                            messages.append(f"  - ... and {len(unmatched_order) - 3} more")
-            
-            result["message"] = messages[0] if messages else ""
-            result["messages"] = messages
+                    # Add component info to failure message, but don't change the main status
+                    result["messages"].append(f"Note: This is a {component_type} bill, not a global bill")
             
             return result
             
         except Exception as e:
-            # Capture traceback for better error reporting
-            error_traceback = traceback.format_exc()
-            error_message = f"Error during line item validation: {str(e)}"
-            
-            # Log the error with full details
-            if self.logger:
-                self.logger.error(error_message)
-                self.logger.error(error_traceback)
-            
-            # Return structured error response
+            self.logger.error(f"Error in line items validation: {str(e)}")
+            self.logger.error(traceback.format_exc())
             return {
                 "status": "FAIL",
-                "message": error_message,
-                "messages": [
-                    error_message,
-                    f"Error type: {e.__class__.__name__}"
-                ],
+                "message": f"Error in validation: {str(e)}",
+                "messages": [f"Error in validation: {str(e)}"],
                 "details": {
                     "error": str(e),
-                    "error_type": e.__class__.__name__,
-                    "error_traceback": error_traceback,
-                    "hcfa_line_count": len(hcfa_lines) if hcfa_lines else 0,
-                    "order_line_count": len(order_lines) if not order_lines.empty else 0,
-                    "diagnostic_info": {
-                        "hcfa_sample": hcfa_lines[0] if hcfa_lines else None,
-                        "order_sample": order_lines.iloc[0].to_dict() if not order_lines.empty else None
+                    "traceback": traceback.format_exc(),
+                    "component_billing": {
+                        "is_component_billing": False,
+                        "component_type": None,
+                        "affected_line_items": [],
+                        "message": ""
                     }
                 }
             }
@@ -318,3 +249,60 @@ class LineItemValidator:
             return 0.0
             
         return prefix_len / max_len
+
+    def _check_component_modifiers(self, hcfa_line: Dict, order_line: Dict) -> Dict:
+        """
+        Check if there are component modifiers (TC or 26) that affect matching.
+        
+        Args:
+            hcfa_line: HCFA line item
+            order_line: Order line item
+            
+        Returns:
+            Dict: Component modifier assessment
+        """
+        result = {
+            "has_component_mismatch": False,
+            "component_type": None,
+            "message": ""
+        }
+        
+        # Get modifiers from both sides
+        hcfa_modifiers = set(str(hcfa_line.get('modifier', '')).split(',')) if hcfa_line.get('modifier') else set()
+        order_modifiers = set(str(order_line.get('Modifier', '')).split(',')) if order_line.get('Modifier') else set()
+        
+        # Clean modifiers
+        hcfa_modifiers = {mod.strip().upper() for mod in hcfa_modifiers if mod.strip()}
+        order_modifiers = {mod.strip().upper() for mod in order_modifiers if mod.strip()}
+        
+        # Check for component modifiers
+        hcfa_has_tc = "TC" in hcfa_modifiers
+        hcfa_has_26 = "26" in hcfa_modifiers
+        order_has_tc = "TC" in order_modifiers
+        order_has_26 = "26" in order_modifiers
+        
+        # Determine component type in HCFA
+        if hcfa_has_tc:
+            result["component_type"] = "technical"
+        elif hcfa_has_26:
+            result["component_type"] = "professional"
+            
+        # Check for mismatches
+        if (hcfa_has_tc and not order_has_tc) or (hcfa_has_26 and not order_has_26):
+            result["has_component_mismatch"] = True
+            
+            if hcfa_has_tc:
+                result["message"] = "Order is for global service but bill is for technical component (TC) only"
+            else:
+                result["message"] = "Order is for global service but bill is for professional component (26) only"
+        
+        # Also check the reverse
+        if (order_has_tc and not hcfa_has_tc) or (order_has_26 and not hcfa_has_26):
+            result["has_component_mismatch"] = True
+            
+            if order_has_tc:
+                result["message"] = "Order is for technical component (TC) only but bill is for global service"
+            else:
+                result["message"] = "Order is for professional component (26) only but bill is for global service"
+        
+        return result

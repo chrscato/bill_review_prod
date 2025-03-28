@@ -146,97 +146,64 @@ class BundleValidator:
     
     def compare_bundles(self, order_cpt_codes: Set[str], hcfa_cpt_codes: Set[str]) -> Dict:
         """
-        Compare bundle detection between order and HCFA data.
+        Compare bundles between order and HCFA CPT codes.
         
         Args:
-            order_cpt_codes: Set of CPT codes from order data
-            hcfa_cpt_codes: Set of CPT codes from HCFA data
+            order_cpt_codes: CPT codes from order
+            hcfa_cpt_codes: CPT codes from HCFA
             
         Returns:
             Dict: Comparison results
         """
-        # Detect bundles in order and HCFA data
         order_bundle = self.detect_bundle(order_cpt_codes)
         hcfa_bundle = self.detect_bundle(hcfa_cpt_codes)
         
-        # Initialize result
         result = {
+            'status': 'NO_BUNDLE',
+            'message': 'No matching bundles found',
             'order_bundle': order_bundle,
             'hcfa_bundle': hcfa_bundle,
-            'status': 'UNKNOWN',
-            'message': '',
             'details': {}
         }
         
-        # Handle case where no bundles were detected
-        if not order_bundle and not hcfa_bundle:
-            result['status'] = 'NO_BUNDLE'
-            result['message'] = 'No bundles detected in order or HCFA data'
+        # If either bundle is not found, return early
+        if not order_bundle or not hcfa_bundle:
             return result
             
-        # Handle case where only one side has a bundle
-        if order_bundle and not hcfa_bundle:
-            result['status'] = 'MISSING_BUNDLE'
-            result['message'] = f"Bundle {order_bundle['bundle_name']} detected in order but not in HCFA"
-            return result
+        # For imaging bundles, check contrast status
+        if (order_bundle.get('modality') in ['MR', 'CT'] and 
+            hcfa_bundle.get('modality') in ['MR', 'CT']):
             
-        if not order_bundle and hcfa_bundle:
-            result['status'] = 'UNEXPECTED_BUNDLE'
-            result['message'] = f"Bundle {hcfa_bundle['bundle_name']} detected in HCFA but not in order"
-            return result
-        
-        # Both sides have bundles - compare them
-        order_type = order_bundle.get('bundle_type')
-        hcfa_type = hcfa_bundle.get('bundle_type')
-        order_body_part = order_bundle.get('body_part')
-        hcfa_body_part = hcfa_bundle.get('body_part')
-        order_modality = order_bundle.get('modality')
-        hcfa_modality = hcfa_bundle.get('modality')
-        
-        # Check if bundle types match
-        if order_type != hcfa_type:
-            result['status'] = 'TYPE_MISMATCH'
-            result['message'] = f"Bundle type mismatch: {order_type} in order, {hcfa_type} in HCFA"
-            return result
-        
-        # Check if body parts match (if applicable)
-        if order_body_part and hcfa_body_part and order_body_part != hcfa_body_part:
-            result['status'] = 'BODY_PART_MISMATCH'
-            result['message'] = f"Body part mismatch: {order_body_part} in order, {hcfa_body_part} in HCFA"
-            return result
+            # Extract contrast status from bundle codes
+            order_codes = set(order_cpt_codes)
+            hcfa_codes = set(hcfa_cpt_codes)
             
-        # Check if modalities match (if applicable and not emg)
-        if order_modality and hcfa_modality and order_modality != hcfa_modality and order_type != 'emg':
-            result['status'] = 'MODALITY_MISMATCH'
-            result['message'] = f"Modality mismatch: {order_modality} in order, {hcfa_modality} in HCFA"
-            # For modality mismatch, we usually continue as this is often acceptable
-            # But we mark it for reporting purposes
+            # Look at the first code to determine contrast
+            order_contrast = None
+            hcfa_contrast = None
+            
+            if order_codes and hcfa_codes:
+                order_contrast = ClinicalIntent.detect_contrast_from_cpt(next(iter(order_codes)))
+                hcfa_contrast = ClinicalIntent.detect_contrast_from_cpt(next(iter(hcfa_codes)))
+                
+                if order_contrast is not None and hcfa_contrast is not None:
+                    if order_contrast is False and hcfa_contrast is True:
+                        result['status'] = 'CONTRAST_MISMATCH'
+                        result['message'] = "Contrast mismatch: without contrast ordered but with contrast billed"
+                        return result
+                    elif order_contrast is True and hcfa_contrast is False:
+                        result['status'] = 'CONTRAST_MISMATCH'
+                        result['message'] = "Contrast mismatch: with contrast ordered but without contrast billed"
+                        return result
         
-        # Determine overall match quality
-        if order_bundle['match_quality'] == 2 and hcfa_bundle['match_quality'] == 2:
-            # Both are full matches
-            if order_bundle['bundle_name'] == hcfa_bundle['bundle_name']:
-                result['status'] = 'EXACT_MATCH'
-                result['message'] = f"Exact bundle match: {order_bundle['bundle_name']}"
-            else:
-                result['status'] = 'VARIANT_MATCH'
-                result['message'] = f"Variant bundle match: {order_bundle['bundle_name']} vs {hcfa_bundle['bundle_name']}"
+        # Rest of the existing bundle comparison logic
+        if order_bundle['bundle_name'] == hcfa_bundle['bundle_name']:
+            result['status'] = 'EXACT_MATCH'
+            result['message'] = f"Exact bundle match: {order_bundle['bundle_name']}"
         else:
-            # At least one is a partial match
-            result['status'] = 'PARTIAL_MATCH'
-            result['message'] = f"Partial bundle match of type {order_type}"
+            result['status'] = 'VARIANT_MATCH'
+            result['message'] = f"Variant bundle match: {order_bundle['bundle_name']} vs {hcfa_bundle['bundle_name']}"
             
-            # Add details about the partial match
-            result['details'] = {
-                'order_quality': order_bundle['match_quality'],
-                'hcfa_quality': hcfa_bundle['match_quality'],
-                'order_missing_core': order_bundle['missing_core'],
-                'hcfa_missing_core': hcfa_bundle['missing_core'],
-                'shared_codes': list(set(order_cpt_codes).intersection(set(hcfa_cpt_codes))),
-                'order_only_codes': list(set(order_cpt_codes) - set(hcfa_cpt_codes)),
-                'hcfa_only_codes': list(set(hcfa_cpt_codes) - set(order_cpt_codes))
-            }
-        
         return result
     
     def validate(self, order_data: Dict, hcfa_data: Dict) -> Dict:
@@ -281,5 +248,40 @@ class BundleValidator:
             'hcfa_cpt_codes': list(hcfa_cpt_codes),
             'message': comparison['message']
         }
+        
+        # Check for contrast mismatch separately, as it's a critical clinical issue
+        if validation_result['status'] == 'PASS' and comparison['status'] != 'NO_BUNDLE':
+            # Check contrast for imaging procedures
+            order_bundle = comparison.get('order_bundle', {})
+            hcfa_bundle = comparison.get('hcfa_bundle', {})
+            
+            if order_bundle.get('modality') in ['MR', 'CT'] and hcfa_bundle.get('modality') in ['MR', 'CT']:
+                # Extra validation for contrast status
+                order_codes = set(order_cpt_codes)
+                hcfa_codes = set(hcfa_cpt_codes)
+                
+                order_contrast = None
+                hcfa_contrast = None
+                
+                for code in order_codes:
+                    contrast = ClinicalIntent.detect_contrast_from_cpt(code)
+                    if contrast is not None:
+                        order_contrast = contrast
+                        break
+                        
+                for code in hcfa_codes:
+                    contrast = ClinicalIntent.detect_contrast_from_cpt(code)
+                    if contrast is not None:
+                        hcfa_contrast = contrast
+                        break
+                
+                if order_contrast is not None and hcfa_contrast is not None:
+                    if order_contrast != hcfa_contrast:
+                        validation_result['status'] = 'FAIL'
+                        validation_result['message'] = "Contrast mismatch between order and billed codes"
+                        validation_result['bundle_comparison']['contrast_mismatch'] = {
+                            'order_contrast': "with" if order_contrast else "without",
+                            'hcfa_contrast': "with" if hcfa_contrast else "without"
+                        }
         
         return validation_result

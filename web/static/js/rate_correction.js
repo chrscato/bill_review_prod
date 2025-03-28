@@ -128,69 +128,93 @@ function isRateValidationFailure(failure) {
     return false;
 }
 
+// Function to close all modals
+function closeAllModals() {
+    const rateCorrectionModal = document.getElementById('rateCorrectionModal');
+    const otaCorrectionModal = document.getElementById('otaCorrectionModal');
+    
+    if (rateCorrectionModal) {
+        const modal = bootstrap.Modal.getInstance(rateCorrectionModal);
+        if (modal) modal.hide();
+    }
+    
+    if (otaCorrectionModal) {
+        const modal = bootstrap.Modal.getInstance(otaCorrectionModal);
+        if (modal) modal.hide();
+    }
+}
+
 // Define and export the showRateCorrectionModal function immediately
 window.showRateCorrectionModal = function(failure) {
-    console.log('Rate correction modal function called');
-    console.log('Checking if document qualifies for rate correction:', failure);
-    
-    // Check if this is a rate validation failure
-    if (!isRateValidationFailure(failure)) {
-        showErrorMessage('This document does not have any rate validation failures.');
-        return;
-    }
-    
-    // Get provider info from the correct location in the data structure
-    const providerInfo = failure.database_details?.provider_details || {};
-    console.log('Provider info from database details:', providerInfo);
-    
-    if (!isInNetworkProvider(providerInfo)) {
-        showErrorMessage('Rate correction is only available for in-network providers. This provider is out-of-network.');
-        return;
-    }
-    
-    console.log('Document qualifies for rate correction');
-    
-    // Store current failure data
-    currentFailureData = failure;
-    currentProviderTin = providerInfo.tin || '';
-    
-    // Clean TIN (remove non-digits)
-    currentProviderTin = currentProviderTin.replace(/\D/g, '');
-    
-    // Set provider information in modal
-    document.getElementById('provider-tin').textContent = currentProviderTin;
-    document.getElementById('provider-name').textContent = providerInfo.provider_name || 'Unknown Provider';
-    document.getElementById('provider-network').textContent = providerInfo.provider_network;
-    
-    // Populate line items table
-    populateLineItemsTable(failure);
-    
-    // Populate category table
-    populateCategoryTable();
-    
-    // Reset active tab to line item correction
-    const tabElement = document.getElementById('line-item-tab');
-    if (tabElement) {
-        const tab = new bootstrap.Tab(tabElement);
-        tab.show();
-    }
-    
-    // Show the modal
-    const modalElement = document.getElementById('rateCorrectionModal');
-    if (modalElement) {
-        // Check if Bootstrap is loaded
-        if (typeof bootstrap !== 'undefined' && bootstrap.Modal) {
-            const modal = new bootstrap.Modal(modalElement);
-            modal.show();
-        } else {
-            // Fallback if Bootstrap is not loaded
-            modalElement.style.display = 'block';
-            modalElement.classList.add('show');
-            document.body.classList.add('modal-open');
+    try {
+        console.log('Opening Rate Correction Modal');
+        console.log('Checking if document qualifies for rate correction:', failure);
+        
+        // Close any open modals first
+        closeAllModals();
+        
+        // Check if this is a rate validation failure
+        if (!isRateValidationFailure(failure)) {
+            showErrorMessage('This document does not have any rate validation failures.');
+            return;
         }
-    } else {
-        console.error('Rate correction modal element not found');
-        showErrorMessage('Could not find rate correction modal. Please refresh the page and try again.');
+        
+        // Get provider info from the correct location in the data structure
+        const providerInfo = failure.database_details?.provider_details || {};
+        console.log('Provider info from database details:', providerInfo);
+        
+        if (!isInNetworkProvider(providerInfo)) {
+            showErrorMessage('Rate correction is only available for in-network providers. This provider is out-of-network.');
+            return;
+        }
+        
+        console.log('Document qualifies for rate correction');
+        
+        // Store current failure data
+        currentFailureData = failure;
+        currentProviderTin = providerInfo.tin || '';
+        
+        // Clean TIN (remove non-digits)
+        currentProviderTin = currentProviderTin.replace(/\D/g, '');
+        
+        // Set provider information in modal
+        document.getElementById('provider-tin').textContent = currentProviderTin;
+        document.getElementById('provider-name').textContent = providerInfo.provider_name || 'Unknown Provider';
+        document.getElementById('provider-network').textContent = providerInfo.provider_network;
+        
+        // Populate line items table
+        populateLineItemsTable(failure);
+        
+        // Populate category table
+        populateCategoryTable();
+        
+        // Reset active tab to line item correction
+        const tabElement = document.getElementById('line-item-tab');
+        if (tabElement) {
+            const tab = new bootstrap.Tab(tabElement);
+            tab.show();
+        }
+        
+        // Show the modal
+        const modalElement = document.getElementById('rateCorrectionModal');
+        if (modalElement) {
+            // Check if Bootstrap is loaded
+            if (typeof bootstrap !== 'undefined' && bootstrap.Modal) {
+                const modal = new bootstrap.Modal(modalElement);
+                modal.show();
+            } else {
+                // Fallback if Bootstrap is not loaded
+                modalElement.style.display = 'block';
+                modalElement.classList.add('show');
+                document.body.classList.add('modal-open');
+            }
+        } else {
+            console.error('Rate correction modal element not found');
+            showErrorMessage('Could not find rate correction modal. Please refresh the page and try again.');
+        }
+    } catch (error) {
+        console.error('Error in showRateCorrectionModal:', error);
+        showErrorMessage('Error opening rate correction modal: ' + error.message);
     }
 };
 

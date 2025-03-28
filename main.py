@@ -87,11 +87,6 @@ class BillReviewApplication:
                 order_details = self.db_service.get_full_details(order_id, conn)
                 order_lines = self.db_service.get_line_items(order_id, conn)
                 
-                # Log the extracted order ID for debugging
-                print(f"Processing file: {file_path.name}")
-                print(f"Order ID from JSON: {order_id}")
-                print(f"Filemaker number: {raw_hcfa_data.get('filemaker_number')}")
-                
                 # Extract patient info from order details
                 patient_info = order_details.get('order_details', {}) if order_details else {}
                 
@@ -217,6 +212,25 @@ class BillReviewApplication:
                 # Generate overall messages with detailed failure information
                 overall_messages = []
                 
+                # Check for component billing across validators
+                has_component_billing = False
+                component_type = None
+                component_message = None
+                
+                # Look for component billing in modifier validator
+                if validation_results.get('modifier', {}).get('component_billing', {}).get('is_component_billing'):
+                    has_component_billing = True
+                    component_info = validation_results['modifier']['component_billing']
+                    component_type = component_info['component_type']
+                    component_message = component_info['message']
+                
+                # Also check line items validator
+                elif validation_results.get('line_items', {}).get('component_billing', {}).get('is_component_billing'):
+                    has_component_billing = True
+                    component_info = validation_results['line_items']['component_billing']
+                    component_type = component_info['component_type']
+                    component_message = component_info['message']
+                
                 if critical_failures:
                     overall_messages.append(f"Validation failed with {len(critical_failures)} critical issues:")
                     for failure_type, message in critical_failures:
@@ -272,20 +286,34 @@ class BillReviewApplication:
                 else:
                     overall_messages.append("Validation passed successfully with no issues")
                 
-                # Log the combined validation result
-                validation_result = ValidationResult(
-                    **base_result,
-                    status=overall_status,
-                    validation_type="complete",
-                    details=validation_results,
-                    messages=overall_messages
-                )
-                
-                # Add to results list
-                self.validation_results.append(validation_result)
-                
-                # Add to reporter for generating reports
-                self.reporter.add_result(validation_result.to_dict())
+                # Add component billing information if present
+                if has_component_billing:
+                    # Add to validation messages
+                    overall_messages.append(f"\nNon-Global Bill: {component_message}")
+                    
+                    # Add structured data
+                    validation_result = ValidationResult(
+                        **base_result,
+                        status=overall_status,
+                        validation_type="complete",
+                        details={
+                            **validation_results,
+                            "component_billing": {
+                                "is_component_billing": True,
+                                "component_type": component_type,
+                                "message": component_message
+                            }
+                        },
+                        messages=overall_messages
+                    )
+                else:
+                    validation_result = ValidationResult(
+                        **base_result,
+                        status=overall_status,
+                        validation_type="complete",
+                        details=validation_results,
+                        messages=overall_messages
+                    )
                 
                 # Move file to appropriate directory based on validation status
                 target_dir = settings.SUCCESS_PATH if overall_status == "PASS" else settings.FAILS_PATH
@@ -307,8 +335,11 @@ class BillReviewApplication:
                     # For successful validations, just move the file
                     shutil.copy2(file_path, target_path)
                 
-                # Log validation result with status
-                print(f"Validation complete for {file_path.name}: {overall_status}")
+                # Add to results list
+                self.validation_results.append(validation_result)
+                
+                # Add to reporter for generating reports
+                self.reporter.add_result(validation_result.to_dict())
 
             finally:
                 # Always close the database connection
@@ -353,14 +384,6 @@ class BillReviewApplication:
             # Write the modified file to the fails directory
             with open(target_path, 'w', encoding='utf-8') as f:
                 json.dump(file_data, f, indent=2)
-            
-            # Print detailed error information
-            print(f"\nError processing file {file_path.name}:")
-            print(f"Error Type: {type(e).__name__}")
-            print(f"Message: {str(e)}")
-            if 'order_id' in locals() and order_id:
-                print(f"Order ID: {order_id}")
-            print("----------------------------------------")
 
     def run(self):
         """
@@ -390,7 +413,6 @@ class BillReviewApplication:
             # Find and process all JSON files
             json_files = list(Path(settings.JSON_PATH).glob('*.json'))
             total_files = len(json_files)
-            print(f"Starting validation of {total_files} files...")
 
             # Process each file
             for index, json_file in enumerate(json_files, 1):
@@ -417,14 +439,11 @@ class BillReviewApplication:
             excel_path = self.reporter.export_to_excel()
             report_paths["excel"] = excel_path
         
-        # Print final summary
+        # Print only the validation summary
         print("\nValidation Summary:")
         print(f"Total Files: {len(self.validation_results)}")
         print(f"Pass: {sum(1 for r in self.validation_results if r.status == 'PASS')}")
         print(f"Fail: {sum(1 for r in self.validation_results if r.status == 'FAIL')}")
-        print(f"\nReports generated:")
-        for report_type, path in report_paths.items():
-            print(f"- {report_type}: {path}")
 
 if __name__ == "__main__":
     print("Healthcare Bill Review System 2.0")

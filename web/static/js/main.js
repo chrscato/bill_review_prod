@@ -554,11 +554,41 @@ async function saveDbSection(section) {
   }
 }
 
-// Initialize the application
+// Execute on page load
 document.addEventListener('DOMContentLoaded', function() {
-    // Remove dynamic script loading since it's already in HTML
-    loadFailures();
+    // Determine which page we're on and set default filter
+    const pathname = window.location.pathname;
+    let defaultFilter = 'all';
+    
+    if (pathname === '/unauthorized') {
+        defaultFilter = 'unauthorized';
+    } else if (pathname === '/non-global') {
+        defaultFilter = 'component';
+    }
+    
+    // Set the status filter if it exists
+    const statusFilter = document.getElementById('statusFilter');
+    if (statusFilter) {
+        statusFilter.value = defaultFilter;
+    }
+    
+    // Call loadFailures with appropriate filter
+    loadFailures(defaultFilter);
+    
+    // Setup event listeners
     setupEventListeners();
+    
+    // Highlight the current page in navigation
+    const navLinks = document.querySelectorAll('.header a');
+    navLinks.forEach(link => {
+        const linkPath = link.getAttribute('href');
+        if ((pathname === '/' && linkPath === '/') || 
+            (pathname !== '/' && linkPath !== '/' && pathname.includes(linkPath))) {
+            link.classList.add('active-page');
+        } else {
+            link.classList.remove('active-page');
+        }
+    });
 });
 
 /**
@@ -718,16 +748,25 @@ function setupEventListeners() {
 }
 
 // Load validation failures
-async function loadFailures() {
+async function loadFailures(filterType = 'all') {
     try {
         showLoading();
-        const response = await fetch('/api/failures');
+        const url = filterType === 'all' ? 
+            '/api/failures' : 
+            `/api/failures?filter=${filterType}`;
+            
+        console.log('Fetching failures from:', url);
+        const response = await fetch(url);
         if (!response.ok) {
             throw new Error('Failed to fetch failures');
         }
         
         const result = await response.json();
-        console.log('API Response:', result); // Log the API response
+        console.log('API Response:', {
+            status: result.status,
+            dataLength: result.data ? result.data.length : 0,
+            firstItem: result.data && result.data.length > 0 ? result.data[0] : null
+        });
         
         if (result.status !== 'success') {
             throw new Error(`Failed to load failures: ${result.message}`);
@@ -735,16 +774,14 @@ async function loadFailures() {
         
         // Store all failures
         allFailures = result.data;
-        console.log('Stored failures:', allFailures); // Log stored failures
-        
-        // Log sample of failures for debugging
-        if (allFailures.length > 0) {
-            console.log('Sample failure structure:', {
-                validation_messages: allFailures[0].validation_messages,
-                database_details: allFailures[0].database_details,
-                provider_details: allFailures[0].database_details?.provider_details
-            });
-        }
+        console.log('Stored failures:', {
+            totalFailures: allFailures.length,
+            sampleFailure: allFailures.length > 0 ? {
+                filename: allFailures[0].filename,
+                hasValidationMessages: Boolean(allFailures[0].validation_messages),
+                validationMessages: allFailures[0].validation_messages
+            } : null
+        });
         
         // Extract unique failure types
         uniqueFailureTypes.clear();
@@ -752,16 +789,18 @@ async function loadFailures() {
             const types = extractFailureTypes(failure);
             types.forEach(type => uniqueFailureTypes.add(type));
         });
+        console.log('Unique failure types:', Array.from(uniqueFailureTypes));
         
-        // Update status filter dropdown
-        updateStatusFilter(allFailures);
+        // Update status filter dropdown based on the page type
+        updateStatusFilter(allFailures, filterType);
         
         // Apply current filter
         const statusFilter = document.getElementById('statusFilter');
         const filteredFailures = filterFailuresByStatus(allFailures, statusFilter.value);
-        
-        // Log filtered results
-        console.log('Filtered failures:', filteredFailures);
+        console.log('Filtered failures:', {
+            filterType: statusFilter.value,
+            totalFiltered: filteredFailures.length
+        });
         
         // Display filtered failures
         displayFailures(filteredFailures);
@@ -846,49 +885,61 @@ async function selectDocument(doc) {
             buttonContainer.className = 'd-flex gap-2 mt-3';
             buttonContainer.id = 'action-buttons';
 
-            // Add the Fix Rates button for in-network providers
-            const fixButton = document.createElement('button');
-            fixButton.className = 'btn btn-primary';
-            fixButton.id = 'fix-rate-button';
-            fixButton.textContent = 'Fix Rate Issues';
-            fixButton.onclick = function() {
-                console.log('Rate correction button clicked');
-                console.log('showRateCorrectionModal available:', typeof window.showRateCorrectionModal === 'function');
-                
-                // Check if the rate correction function exists
-                if (typeof window.showRateCorrectionModal === 'function') {
-                    // Call the rate correction modal function with the current document data
-                    window.showRateCorrectionModal(jsonResult.data);
-                } else {
-                    console.error('Rate correction function not found');
-                    showErrorMessage('Error: Rate correction functionality not loaded. Please refresh the page and try again.');
-                }
-            };
+            // Get provider info
+            const providerInfo = dbData?.provider_details || {};
+            const networkStatus = providerInfo.provider_network || 
+                                 providerInfo.network_status || '';
+            
+            // Determine if in-network or out-of-network
+            const isInNetwork = networkStatus.toLowerCase().includes('in-network') || 
+                               networkStatus.toLowerCase().includes('in network');
+            
+            console.log('Provider network status:', { networkStatus, isInNetwork });
+            
+            // Add the appropriate button based on network status
+            if (isInNetwork) {
+                // Add fix rates button for in-network
+                const fixButton = document.createElement('button');
+                fixButton.className = 'btn btn-primary';
+                fixButton.id = 'fix-rate-button';
+                fixButton.textContent = 'Fix Rate Issues';
+                fixButton.onclick = function() {
+                    console.log('Rate correction button clicked');
+                    console.log('showRateCorrectionModal available:', typeof window.showRateCorrectionModal === 'function');
+                    
+                    if (typeof window.showRateCorrectionModal === 'function') {
+                        window.showRateCorrectionModal(jsonResult.data);
+                    } else {
+                        console.error('Rate correction function not found');
+                        showErrorMessage('Error: Rate correction functionality not loaded. Please refresh the page and try again.');
+                    }
+                };
+                buttonContainer.appendChild(fixButton);
+            } else {
+                // Add OTA button for out-of-network
+                const otaButton = document.createElement('button');
+                otaButton.className = 'btn btn-secondary';
+                otaButton.id = 'add-ota-button';
+                otaButton.textContent = 'Add OTA Rates';
+                otaButton.onclick = function() {
+                    console.log('OTA correction button clicked');
+                    console.log('showOTACorrectionModal available:', typeof window.showOTACorrectionModal === 'function');
+                    
+                    if (typeof window.showOTACorrectionModal === 'function') {
+                        const combinedData = {
+                            ...jsonResult.data,
+                            database_details: dbData
+                        };
+                        window.showOTACorrectionModal(combinedData);
+                    } else {
+                        console.error('OTA correction function not found');
+                        showErrorMessage('Error: OTA correction functionality not loaded. Please refresh the page and try again.');
+                    }
+                };
+                buttonContainer.appendChild(otaButton);
+            }
 
-            // Add the OTA Rates button for out-of-network providers
-            const otaButton = document.createElement('button');
-            otaButton.className = 'btn btn-secondary';
-            otaButton.id = 'add-ota-button';
-            otaButton.textContent = 'Add OTA Rates';
-            otaButton.onclick = function() {
-                console.log('OTA correction button clicked');
-                console.log('showOTACorrectionModal available:', typeof window.showOTACorrectionModal === 'function');
-                
-                // Check if the OTA correction function exists
-                if (typeof window.showOTACorrectionModal === 'function') {
-                    // Call the OTA correction modal function with both JSON and database data
-                    const combinedData = {
-                        ...jsonResult.data,
-                        database_details: dbData
-                    };
-                    window.showOTACorrectionModal(combinedData);
-                } else {
-                    console.error('OTA correction function not found');
-                    showErrorMessage('Error: OTA correction functionality not loaded. Please refresh the page and try again.');
-                }
-            };
-
-            // Add the Bill Resolved button
+            // Always add the resolve button
             const resolveButton = document.createElement('button');
             resolveButton.className = 'btn btn-success';
             resolveButton.id = 'resolve-bill-button';
@@ -900,10 +951,6 @@ async function selectDocument(doc) {
                     });
                 }
             };
-
-            // Add all buttons to the container
-            buttonContainer.appendChild(fixButton);
-            buttonContainer.appendChild(otaButton);
             buttonContainer.appendChild(resolveButton);
 
             // Add the button container after validation messages
@@ -1335,70 +1382,74 @@ function extractFailureTypes(failure) {
 }
 
 // Function to update the status filter dropdown
-function updateStatusFilter(failures) {
+function updateStatusFilter(failures, pageType) {
     const statusFilter = document.getElementById('statusFilter');
-    const currentValue = statusFilter.value; // Store current selection
+    const currentValue = statusFilter.value;
     
     // Clear existing options except the first one
     while (statusFilter.options.length > 1) {
         statusFilter.remove(1);
     }
     
-    // Get unique failure types from all failures
-    const uniqueTypes = new Set();
+    // Set the appropriate default option based on page type
+    if (pageType === 'unauthorized') {
+        statusFilter.options[0].value = 'unauthorized';
+        statusFilter.options[0].textContent = 'All Unauthorized';
+    } else if (pageType === 'component') {
+        statusFilter.options[0].value = 'component';
+        statusFilter.options[0].textContent = 'All Non-Global';
+    }
     
-    // Log the first few failures for debugging
-    console.log('Sample failure structure:', failures.slice(0, 3));
+    // For unauthorized services page, add specific sub-categories
+    if (pageType === 'unauthorized') {
+        addOptionIfNotExists(statusFilter, 'missing_cpt', 'Missing CPT');
+        addOptionIfNotExists(statusFilter, 'wrong_cpt', 'Wrong CPT');
+        addOptionIfNotExists(statusFilter, 'extra_cpt', 'Extra Services');
+    }
     
-    failures.forEach(failure => {
-        // Check validation_messages
-        if (failure.validation_messages) {
-            failure.validation_messages.forEach(msg => {
-                console.log('Processing message:', msg);
-                
-                // Look for rate, line items, and intent validation messages
-                if (msg.toLowerCase().includes('rate')) {
-                    uniqueTypes.add('RATE');
-                    console.log('Found rate in message:', msg);
-                }
-                if (msg.includes('LINE_ITEMS Validation Failed') || 
-                    msg.includes('Line Items Validation Failed') ||
-                    msg.toLowerCase().includes('line items validation failed')) {
-                    uniqueTypes.add('LINE_ITEMS');
-                    console.log('Found line items in message:', msg);
-                }
-                if (msg.includes('INTENT Validation Failed') || 
-                    msg.includes('Intent Validation Failed') ||
-                    msg.toLowerCase().includes('intent validation failed') ||
-                    msg.toLowerCase().includes('intent mismatch')) {
-                    uniqueTypes.add('INTENT');
-                    console.log('Found intent in message:', msg);
-                }
-            });
-        }
-    });
+    // For non-global bills page, add specific sub-categories
+    if (pageType === 'component') {
+        addOptionIfNotExists(statusFilter, 'tc', 'Technical Component (TC)');
+        addOptionIfNotExists(statusFilter, '26', 'Professional Component (26)');
+    }
     
-    // Add OTA option
-    uniqueTypes.add('OTA');
-    
-    // Log the unique types for debugging
-    console.log('Unique failure types:', Array.from(uniqueTypes));
-    
-    // Add unique failure types to dropdown
-    uniqueTypes.forEach(type => {
-        const option = document.createElement('option');
-        option.value = type.toLowerCase();
-        option.textContent = type;
-        statusFilter.appendChild(option);
-    });
+    // For main page, add all categories as before
+    if (pageType === 'all') {
+        // Extract unique failure types as before
+        const uniqueTypes = new Set();
+        failures.forEach(failure => {
+            const types = extractFailureTypes(failure);
+            types.forEach(type => uniqueTypes.add(type));
+        });
+        
+        // Add all unique types to dropdown
+        uniqueTypes.forEach(type => {
+            addOptionIfNotExists(statusFilter, type.toLowerCase(), type);
+        });
+        
+        // Also add our special categories
+        addOptionIfNotExists(statusFilter, 'unauthorized', 'Unauthorized Services');
+        addOptionIfNotExists(statusFilter, 'component', 'Non-Global Bills');
+    }
     
     // Restore previous selection if it still exists
     if (currentValue) {
-        statusFilter.value = currentValue;
+        try {
+            statusFilter.value = currentValue;
+        } catch (e) {
+            console.warn('Could not restore previous filter value:', e);
+        }
     }
-    
-    // Log the final dropdown state
-    console.log('Dropdown options:', Array.from(statusFilter.options).map(opt => opt.text));
+}
+
+// Helper to add option if it doesn't exist
+function addOptionIfNotExists(selectElement, value, text) {
+    if (!Array.from(selectElement.options).some(opt => opt.value === value)) {
+        const option = document.createElement('option');
+        option.value = value;
+        option.textContent = text;
+        selectElement.appendChild(option);
+    }
 }
 
 // Function to filter failures based on status
@@ -1410,56 +1461,171 @@ function filterFailuresByStatus(failures, selectedStatus) {
     return failures.filter(failure => {
         if (!failure.validation_messages) return false;
         
-        // Check for OTA filter
-        if (selectedStatus.toLowerCase() === 'ota') {
-            console.log('Checking OTA filter for failure:', failure);
+        // Convert validation messages to lowercase for easier comparison
+        const messages = failure.validation_messages.map(msg => msg.toLowerCase());
+        
+        // Check for unauthorized services
+        if (selectedStatus === 'unauthorized') {
+            return messages.some(msg => 
+                msg.includes('missing cpt') ||
+                msg.includes('wrong cpt') ||
+                msg.includes('extra services') ||
+                msg.includes('missing line items') ||
+                msg.includes('mismatched cpt') ||
+                msg.includes('unauthorized service')
+            );
+        }
+        
+        // Check for specific unauthorized sub-categories
+        if (selectedStatus === 'missing_cpt') {
+            return messages.some(msg => msg.includes('missing cpt'));
+        }
+        
+        if (selectedStatus === 'wrong_cpt') {
+            return messages.some(msg => msg.includes('mismatched cpt'));
+        }
+        
+        if (selectedStatus === 'extra_cpt') {
+            return messages.some(msg => msg.includes('extra services'));
+        }
+        
+        // Check for component modifiers (non-global bills)
+        if (selectedStatus === 'component') {
+            // First check validation messages for non-global indicators
+            const hasNonGlobalMessage = messages.some(msg => 
+                msg.toLowerCase().includes('non-global bill') ||
+                msg.toLowerCase().includes('professional component') ||
+                msg.toLowerCase().includes('technical component')
+            );
             
-            // Must have rate validation failure
-            const hasRateFailure = failure.validation_messages.some(msg => {
-                const isRate = msg.includes('RATE Validation Failed') || 
-                       msg.includes('Rate validation failed') ||
-                       msg.toLowerCase().includes('rate validation failed');
-                console.log('Rate failure check:', { msg, isRate });
-                return isRate;
+            if (hasNonGlobalMessage) return true;
+            
+            // Then check service lines for TC or 26 modifiers
+            const hasComponentModifier = failure.service_lines?.some(line => {
+                // Handle different possible modifier formats
+                let modifiers = line.modifiers;
+                if (!modifiers) return false;
+                
+                // Convert to array if it's a string
+                if (typeof modifiers === 'string') {
+                    modifiers = modifiers.split(',').map(m => m.trim());
+                }
+                
+                // Ensure it's an array
+                if (!Array.isArray(modifiers)) {
+                    modifiers = [String(modifiers)];
+                }
+                
+                // Check for TC or 26 modifiers (case insensitive)
+                return modifiers.some(mod => 
+                    mod.toLowerCase() === 'tc' || 
+                    mod.toLowerCase() === '26' ||
+                    mod.toLowerCase().includes('tc') ||
+                    mod.toLowerCase().includes('26')
+                );
             });
             
+            return hasComponentModifier;
+        }
+        
+        // Check for specific component sub-categories
+        if (selectedStatus === 'tc') {
+            // First check validation messages
+            const hasTCMessage = messages.some(msg => 
+                msg.toLowerCase().includes('technical component')
+            );
+            
+            if (hasTCMessage) return true;
+            
+            // Then check service lines
+            return failure.service_lines?.some(line => {
+                let modifiers = line.modifiers;
+                if (!modifiers) return false;
+                
+                if (typeof modifiers === 'string') {
+                    modifiers = modifiers.split(',').map(m => m.trim());
+                }
+                
+                if (!Array.isArray(modifiers)) {
+                    modifiers = [String(modifiers)];
+                }
+                
+                return modifiers.some(mod => 
+                    mod.toLowerCase() === 'tc' || 
+                    mod.toLowerCase().includes('tc')
+                );
+            });
+        }
+        
+        if (selectedStatus === '26') {
+            // First check validation messages
+            const has26Message = messages.some(msg => 
+                msg.toLowerCase().includes('professional component')
+            );
+            
+            if (has26Message) return true;
+            
+            // Then check service lines
+            return failure.service_lines?.some(line => {
+                let modifiers = line.modifiers;
+                if (!modifiers) return false;
+                
+                if (typeof modifiers === 'string') {
+                    modifiers = modifiers.split(',').map(m => m.trim());
+                }
+                
+                if (!Array.isArray(modifiers)) {
+                    modifiers = [String(modifiers)];
+                }
+                
+                return modifiers.some(mod => 
+                    mod.toLowerCase() === '26' || 
+                    mod.toLowerCase().includes('26')
+                );
+            });
+        }
+        
+        // Check for OTA filter
+        if (selectedStatus.toLowerCase() === 'ota') {
+            // Must have rate validation failure
+            const hasRateFailure = messages.some(msg => 
+                msg.includes('rate validation failed') ||
+                msg.includes('rate issue') ||
+                msg.includes('rate problem')
+            );
+            
             // Must be out of network
-            const networkStatus = failure.database_details?.provider_details?.network_status;
-            const isOutOfNetwork = networkStatus === 'Out of Network';
-            console.log('Network status check:', { networkStatus, isOutOfNetwork });
+            const providerInfo = failure.database_details?.provider_details || {};
+            const networkStatus = providerInfo.provider_network || 
+                                providerInfo.network_status || 
+                                providerInfo['Provider Network'] || '';
+            const isOutOfNetwork = networkStatus.toLowerCase().includes('out of network') || 
+                                  networkStatus.toLowerCase().includes('out-of-network');
             
-            const matches = hasRateFailure && isOutOfNetwork;
-            console.log('OTA filter result:', { hasRateFailure, isOutOfNetwork, matches });
-            
-            return matches;
+            return hasRateFailure && isOutOfNetwork;
         }
         
         // Check for rate validation messages
         if (selectedStatus.toLowerCase() === 'rate') {
-            return failure.validation_messages.some(msg => {
-                return msg.includes('RATE Validation Failed') || 
-                       msg.includes('Rate validation failed') ||
-                       msg.toLowerCase().includes('rate validation failed');
-            });
+            return messages.some(msg => 
+                msg.includes('rate validation failed')
+            );
         }
         
         // Check for line items validation messages
         if (selectedStatus.toLowerCase() === 'line_items') {
-            return failure.validation_messages.some(msg => {
-                return msg.includes('LINE_ITEMS Validation Failed') || 
-                       msg.includes('Line Items Validation Failed') ||
-                       msg.toLowerCase().includes('line items validation failed');
-            });
+            return messages.some(msg => 
+                msg.includes('line items validation failed') ||
+                msg.includes('line_items validation failed')
+            );
         }
         
         // Check for intent validation messages
         if (selectedStatus.toLowerCase() === 'intent') {
-            return failure.validation_messages.some(msg => {
-                return msg.includes('INTENT Validation Failed') || 
-                       msg.includes('Intent Validation Failed') ||
-                       msg.toLowerCase().includes('intent validation failed') ||
-                       msg.toLowerCase().includes('intent mismatch');
-            });
+            return messages.some(msg => 
+                msg.includes('intent validation failed') ||
+                msg.includes('intent mismatch')
+            );
         }
         
         // For other status types, check failure_types
@@ -1471,150 +1637,77 @@ function filterFailuresByStatus(failures, selectedStatus) {
 // Function to display failures in the document list
 function displayFailures(failures) {
     const container = document.getElementById('documentList');
-    container.innerHTML = '';
-
-    if (!failures || failures.length === 0) {
-        container.innerHTML = '<div class="p-2 text-center text-muted">No documents found</div>';
+    if (!container) {
+        console.error('Document list container not found');
         return;
     }
-
+    
+    // Clear the container
+    container.innerHTML = '';
+    
+    if (!failures || failures.length === 0) {
+        container.innerHTML = `
+            <div class="alert alert-info">
+                No validation failures found.
+            </div>
+        `;
+        return;
+    }
+    
+    // Store failures globally
+    allDocuments = failures;
+    
+    // Create document items
     failures.forEach(failure => {
         const div = document.createElement('div');
         div.className = 'document-item';
-        div.dataset.filename = failure.filename || '';
+        div.setAttribute('data-filename', failure.filename);
         
-        // Create status badges for each failure type
+        // Get validation types
+        const validationTypes = extractFailureTypes(failure);
+        const typeLabels = Array.from(validationTypes).map(type => 
+            `<span class="badge bg-secondary me-1">${type}</span>`
+        ).join('');
+        
+        // Get provider info if available
+        const providerInfo = failure.database_details?.provider_details || {};
+        const networkStatus = providerInfo.provider_network || 
+                            providerInfo.network_status || '';
+        
+        // Create status badges
         const statusBadges = [];
         
-        // Check validation messages for different failure types
-        if (failure.validation_messages) {
-            failure.validation_messages.forEach(msg => {
-                const msgLower = msg.toLowerCase();
-                
-                // Rate validation failures
-                if (msgLower.includes('rate validation failed') || 
-                    msgLower.includes('rate issue') ||
-                    msgLower.includes('rate problem')) {
-                    statusBadges.push('<span class="badge bg-danger">RATE</span>');
-                }
-                
-                // Line items validation failures
-                if (msgLower.includes('line items validation failed') || 
-                    msgLower.includes('line items issue') ||
-                    msgLower.includes('line items problem')) {
-                    statusBadges.push('<span class="badge bg-danger">LINE_ITEMS</span>');
-                }
-                
-                // Intent validation failures
-                if (msgLower.includes('intent validation failed') || 
-                    msgLower.includes('intent issue') ||
-                    msgLower.includes('intent mismatch')) {
-                    statusBadges.push('<span class="badge bg-danger">INTENT</span>');
-                }
-                
-                // Bundle validation failures
-                if (msgLower.includes('bundle validation failed') || 
-                    msgLower.includes('bundle issue') ||
-                    msgLower.includes('bundle problem')) {
-                    statusBadges.push('<span class="badge bg-warning">BUNDLE</span>');
-                }
-                
-                // Modifier validation failures
-                if (msgLower.includes('modifier validation failed') || 
-                    msgLower.includes('modifier issue') ||
-                    msgLower.includes('invalid modifier')) {
-                    statusBadges.push('<span class="badge bg-warning">MODIFIER</span>');
-                }
-                
-                // Units validation failures
-                if (msgLower.includes('units validation failed') || 
-                    msgLower.includes('units issue') ||
-                    msgLower.includes('invalid units')) {
-                    statusBadges.push('<span class="badge bg-warning">UNITS</span>');
-                }
-                
-                // CPT validation failures
-                if (msgLower.includes('cpt validation failed') || 
-                    msgLower.includes('cpt issue') ||
-                    msgLower.includes('invalid cpt')) {
-                    statusBadges.push('<span class="badge bg-warning">CPT</span>');
-                }
-                
-                // Diagnosis validation failures
-                if (msgLower.includes('diagnosis validation failed') || 
-                    msgLower.includes('diagnosis issue') ||
-                    msgLower.includes('invalid diagnosis')) {
-                    statusBadges.push('<span class="badge bg-warning">DIAGNOSIS</span>');
-                }
-                
-                // Provider validation failures
-                if (msgLower.includes('provider validation failed') || 
-                    msgLower.includes('provider issue') ||
-                    msgLower.includes('invalid provider')) {
-                    statusBadges.push('<span class="badge bg-warning">PROVIDER</span>');
-                }
-                
-                // Patient validation failures
-                if (msgLower.includes('patient validation failed') || 
-                    msgLower.includes('patient issue') ||
-                    msgLower.includes('invalid patient')) {
-                    statusBadges.push('<span class="badge bg-warning">PATIENT</span>');
-                }
-                
-                // Date validation failures
-                if (msgLower.includes('date validation failed') || 
-                    msgLower.includes('date issue') ||
-                    msgLower.includes('invalid date')) {
-                    statusBadges.push('<span class="badge bg-warning">DATE</span>');
-                }
-                
-                // Amount validation failures
-                if (msgLower.includes('amount validation failed') || 
-                    msgLower.includes('amount issue') ||
-                    msgLower.includes('invalid amount')) {
-                    statusBadges.push('<span class="badge bg-warning">AMOUNT</span>');
-                }
-                
-                // Network validation failures
-                if (msgLower.includes('network validation failed') || 
-                    msgLower.includes('network issue') ||
-                    msgLower.includes('invalid network')) {
-                    statusBadges.push('<span class="badge bg-info">NETWORK</span>');
-                }
-            });
+        // Add network status badge if available
+        if (networkStatus) {
+            const isInNetwork = networkStatus.toLowerCase().includes('in-network') || 
+                              networkStatus.toLowerCase().includes('in network');
+            statusBadges.push(`
+                <span class="badge ${isInNetwork ? 'bg-success' : 'bg-warning'} me-1">
+                    ${isInNetwork ? 'In Network' : 'Out of Network'}
+                </span>
+            `);
         }
         
-        // Add any other failure types from the failure_types array
-        if (failure.failure_types) {
-            failure.failure_types.forEach(type => {
-                // Only add if not already added from validation messages
-                if (!statusBadges.some(badge => badge.includes(type))) {
-                    const badgeClass = type === 'NETWORK' ? 'bg-info' : 
-                                     (type === 'RATE' || type === 'LINE_ITEMS' || type === 'INTENT') ? 'bg-danger' : 'bg-warning';
-                    statusBadges.push(`<span class="badge ${badgeClass}">${type}</span>`);
-                }
-            });
-        }
+        // Add validation type badges
+        statusBadges.push(typeLabels);
         
-        // Get patient name from the data
-        const patientName = failure.patient_info?.patient_name || 
-                          failure.patient_name || 
-                          'Unknown Patient';
-        
-        // Create the HTML with patient name and badges
         div.innerHTML = `
-            <div class="d-flex flex-column">
-                <div class="text-truncate">
-                    ${patientName}
-                </div>
-                <div class="d-flex flex-wrap">
-                    ${statusBadges.join('')}
+            <div class="d-flex justify-content-between align-items-start p-2">
+                <div class="flex-grow-1">
+                    <div class="fw-bold text-truncate">${failure.filename}</div>
+                    <div class="small text-muted">
+                        Order ID: ${failure.order_id || 'N/A'}
+                    </div>
+                    <div class="mt-1">
+                        ${statusBadges.join('')}
+                    </div>
                 </div>
             </div>
         `;
         
         // Add click handler
-        div.onclick = () => selectDocument(failure);
+        div.addEventListener('click', () => selectDocument(failure));
+        
         container.appendChild(div);
     });
 }

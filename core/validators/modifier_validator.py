@@ -68,9 +68,62 @@ class ModifierValidator:
             {"80", "81", "82"},  # Assistant surgeon modifiers
         ]
     
+    def detect_component_modifiers(self, hcfa_data: Dict) -> Dict:
+        """
+        Detect and categorize TC (Technical Component) or 26 (Professional Component) modifiers.
+        
+        Args:
+            hcfa_data: HCFA data with line_items
+            
+        Returns:
+            Dict: Component billing information
+        """
+        result = {
+            "is_component_billing": False,
+            "component_type": None,
+            "affected_line_items": [],
+            "message": ""
+        }
+        
+        if not hcfa_data or "line_items" not in hcfa_data:
+            return result
+        
+        # Check each line item for TC or 26 modifiers
+        for i, line in enumerate(hcfa_data.get('line_items', [])):
+            modifiers = self._parse_modifiers(line.get('modifier'))
+            
+            if "TC" in modifiers:
+                result["is_component_billing"] = True
+                result["component_type"] = "technical"
+                result["affected_line_items"].append({
+                    "index": i,
+                    "cpt": line.get('cpt', ''),
+                    "modifier": "TC"
+                })
+            elif "26" in modifiers:
+                result["is_component_billing"] = True
+                result["component_type"] = "professional"
+                result["affected_line_items"].append({
+                    "index": i,
+                    "cpt": line.get('cpt', ''),
+                    "modifier": "26"
+                })
+        
+        # Generate appropriate message
+        if result["is_component_billing"]:
+            if result["component_type"] == "technical":
+                result["message"] = "This is a technical component (TC) bill, not a global bill."
+            else:
+                result["message"] = "This is a professional component (26) bill, not a global bill."
+                
+            if len(result["affected_line_items"]) > 1:
+                result["message"] += f" ({len(result['affected_line_items'])} line items affected)"
+        
+        return result
+
     def validate(self, hcfa_data: Dict) -> Dict:
         """
-        Validate modifiers in line items.
+        Validate modifiers in HCFA data.
         
         Args:
             hcfa_data: HCFA data with line_items
@@ -78,111 +131,96 @@ class ModifierValidator:
         Returns:
             Dict: Validation results
         """
-        if not hcfa_data or "line_items" not in hcfa_data:
-            return {
-                "status": "FAIL",
-                "reason": "No line items to validate",
+        result = {
+            "status": "PASS",
+            "messages": [],
+            "details": {
                 "invalid_modifiers": [],
-                "details": {
-                    "total_checked": 0,
-                    "total_invalid": 0
-                }
+                "incompatible_sets": [],
+                "missing_required": []
             }
+        }
         
+        if not hcfa_data or "line_items" not in hcfa_data:
+            result["status"] = "FAIL"
+            result["messages"].append("No line items found in HCFA data")
+            return result
+        
+        # Track invalid modifiers and incompatible sets
         invalid_modifiers = []
         incompatible_sets = []
         missing_required = []
         
-        # Check for bundle information
-        bundle_type = None
-        bundle_name = None
-        
-        # If any line has bundle information, use it for all lines
-        for line in hcfa_data.get('line_items', []):
-            if line.get("bundle_type") and line.get("bundle_name"):
-                bundle_type = line.get("bundle_type")
-                bundle_name = line.get("bundle_name")
-                break
-        
-        bundle_rules = self.bundle_modifier_rules.get(bundle_type, {}) if bundle_type else {}
-        
         # Check each line item
-        for line in hcfa_data.get('line_items', []):
-            # Skip lines without CPT code
-            if "cpt" not in line:
+        for i, line in enumerate(hcfa_data.get('line_items', [])):
+            cpt = line.get('cpt', '')
+            if not cpt:
                 continue
                 
-            cpt = clean_cpt_code(line.get('cpt', ''))
+            # Clean CPT code
+            cpt = clean_cpt_code(cpt)
             
-            # Parse modifiers from string or list
+            # Get bundle type if available
+            bundle_type = line.get('bundle_type')
+            
+            # Get modifiers for this line
             modifiers = self._parse_modifiers(line.get('modifier'))
             
             # Get valid modifiers for this CPT code
             valid_modifiers = self._get_valid_modifiers(cpt, bundle_type)
             
             # Check for invalid modifiers
-            for mod in modifiers:
-                # Skip empty modifiers
-                if not mod:
-                    continue
-                    
-                # If this is a bundle with specific rules, use those
-                if bundle_type and mod not in bundle_rules.get("allowed", []):
-                    invalid_modifiers.append({
-                        'cpt': cpt,
-                        'modifier': mod,
-                        'reason': f"Modifier {mod} not allowed for {bundle_type} bundle"
-                    })
-                # Otherwise check against general rules
-                elif not bundle_type and self.invalid_modifiers and mod in self.invalid_modifiers:
-                    invalid_modifiers.append({
-                        'cpt': cpt,
-                        'modifier': mod,
-                        'reason': f"Modifier {mod} is globally invalid"
-                    })
-                elif not bundle_type and valid_modifiers and mod not in valid_modifiers:
-                    invalid_modifiers.append({
-                        'cpt': cpt,
-                        'modifier': mod,
-                        'reason': f"Modifier {mod} is not valid for CPT {cpt}"
-                    })
+            invalid = modifiers - valid_modifiers
+            if invalid:
+                invalid_modifiers.append({
+                    "line_index": i,
+                    "cpt": cpt,
+                    "modifiers": list(invalid)
+                })
             
-            # Check for incompatible modifiers
-            for incompatible_set in self.incompatible_modifiers:
-                if len(incompatible_set.intersection(modifiers)) > 1:
-                    incompatible_sets.append({
-                        'cpt': cpt,
-                        'modifiers': list(incompatible_set.intersection(modifiers)),
-                        'reason': "These modifiers should not be used together"
-                    })
+            # Check for incompatible modifier sets
+            if "TC" in modifiers and "26" in modifiers:
+                incompatible_sets.append({
+                    "line_index": i,
+                    "cpt": cpt,
+                    "modifiers": ["TC", "26"]
+                })
             
-            # Check for required modifiers in bundles
-            if bundle_type and "required" in bundle_rules and bundle_rules["required"]:
-                for required_mod in bundle_rules["required"]:
-                    if required_mod not in modifiers:
-                        missing_required.append({
-                            'cpt': cpt,
-                            'missing_modifier': required_mod,
-                            'reason': f"Modifier {required_mod} is required for {bundle_type} bundle"
-                        })
+            # Check for required modifiers based on bundle type
+            if bundle_type and bundle_type in self.bundle_modifier_rules:
+                required = self.bundle_modifier_rules[bundle_type].get('required', set())
+                missing = required - modifiers
+                if missing:
+                    missing_required.append({
+                        "line_index": i,
+                        "cpt": cpt,
+                        "bundle_type": bundle_type,
+                        "modifiers": list(missing)
+                    })
         
-        # Combine all issues
-        all_issues = invalid_modifiers + incompatible_sets + missing_required
+        # Generate messages
+        result["messages"] = self._generate_messages(
+            invalid_modifiers,
+            incompatible_sets,
+            missing_required
+        )
         
-        # Generate a detailed result
-        result = {
-            "status": "FAIL" if all_issues else "PASS",
-            "invalid_modifiers": invalid_modifiers,
-            "incompatible_modifiers": incompatible_sets,
-            "missing_required": missing_required,
-            "details": {
-                "total_checked": len(hcfa_data.get('line_items', [])),
-                "total_invalid": len(all_issues),
-                "bundle_type": bundle_type,
-                "bundle_name": bundle_name
-            },
-            "messages": self._generate_messages(invalid_modifiers, incompatible_sets, missing_required)
-        }
+        # Update status if there are any issues
+        if invalid_modifiers or incompatible_sets or missing_required:
+            result["status"] = "FAIL"
+        
+        # Check for TC/26 component billing
+        component_info = self.detect_component_modifiers(hcfa_data)
+        if component_info["is_component_billing"]:
+            # Add component billing information to result
+            result["component_billing"] = component_info
+            
+            # Add component message to messages
+            result["messages"].append(component_info["message"])
+            
+            # For reporting purposes, don't change the status (keep PASS/FAIL as determined)
+            if result["status"] == "PASS":
+                result["messages"].insert(0, "Non-global bill validation passed")
         
         return result
     

@@ -119,10 +119,25 @@ class DatabaseService:
             logging.error(f"Error getting provider details for Order_ID {order_id}: {str(e)}")
             return None
     
-    def get_full_details(self, order_id: str) -> Dict:
-        """Get full order details including provider and line items"""
+    def get_full_details(self, order_id: str, conn: Optional[sqlite3.Connection] = None) -> Dict:
+        """
+        Get full order details including provider and line items.
+        
+        Args:
+            order_id: Order ID to get details for
+            conn: Optional database connection to use
+            
+        Returns:
+            Dict: Full order details
+        """
         try:
-            with self.connect_db() as conn:
+            # Use provided connection or create new one
+            should_close = False
+            if conn is None:
+                conn = self.connect_db()
+                should_close = True
+                
+            try:
                 cursor = conn.cursor()
                 
                 # Get order details
@@ -233,8 +248,17 @@ class DatabaseService:
                     'line_items': line_items_list
                 }
                 
+            except Exception as e:
+                logger.error(f"Error getting full details for order {order_id}: {str(e)}")
+                raise
+                
+            finally:
+                # Close connection if we created it
+                if should_close and conn:
+                    conn.close()
+                
         except Exception as e:
-            logger.error(f"Error getting full details for order {order_id}: {str(e)}")
+            logger.error(f"Database connection error while getting full details for order {order_id}: {str(e)}")
             raise
     
     @staticmethod

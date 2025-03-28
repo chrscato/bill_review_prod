@@ -110,11 +110,34 @@ def index():
     """Render the main page."""
     return render_template('index.html')
 
+@app.route('/unauthorized')
+def unauthorized_services():
+    """Render the unauthorized services page."""
+    return render_template('unauthorized.html')
+
+@app.route('/non-global')
+def non_global_bills():
+    """Render the non-global bills page."""
+    return render_template('non_global.html')
+
 @app.route('/api/failures')
 def get_failures():
-    """API endpoint to get all validation failures."""
+    """API endpoint to get all validation failures with filtering options."""
     try:
+        # Get query parameters
+        filter_type = request.args.get('filter', 'all')
+        
+        # Get all failures first
         failed_files = hcfa_service.get_failed_files()
+        
+        # Apply filtering based on type
+        if filter_type == 'unauthorized':
+            # Filter for unauthorized services (line item mismatches)
+            failed_files = [f for f in failed_files if _is_unauthorized_service(f)]
+        elif filter_type == 'component':
+            # Filter for non-global bills (TC/26 modifiers)
+            failed_files = [f for f in failed_files if _has_component_modifiers(f)]
+        
         return jsonify({
             'status': 'success',
             'data': failed_files
@@ -125,6 +148,44 @@ def get_failures():
             'status': 'error',
             'message': str(e)
         }), 500
+
+def _is_unauthorized_service(failure):
+    """Check if failure is due to unauthorized services."""
+    # Look for LINE_ITEMS validation failures
+    if 'validation_messages' in failure:
+        for message in failure['validation_messages']:
+            if ('LINE_ITEMS' in message and 'Validation Failed' in message) or \
+               ('missing from order' in message.lower()):
+                return True
+    
+    # Check failure types
+    if 'failure_types' in failure and 'LINE_ITEMS' in failure['failure_types']:
+        return True
+    
+    return False
+
+def _has_component_modifiers(failure):
+    """Check if failure contains TC or 26 modifiers."""
+    # Check service lines for TC or 26 modifiers
+    if 'service_lines' in failure:
+        for line in failure['service_lines']:
+            if isinstance(line.get('modifiers'), list):
+                if 'TC' in line['modifiers'] or '26' in line['modifiers']:
+                    return True
+            elif isinstance(line.get('modifiers'), str):
+                if 'TC' in line['modifiers'] or '26' in line['modifiers']:
+                    return True
+    
+    # Check validation messages
+    if 'validation_messages' in failure:
+        for message in failure['validation_messages']:
+            if 'technical component' in message.lower() or \
+               'professional component' in message.lower() or \
+               'modifier TC' in message or \
+               'modifier 26' in message:
+                return True
+                
+    return False
 
 @app.route('/api/failures/<filename>')
 def get_failure_details(filename):

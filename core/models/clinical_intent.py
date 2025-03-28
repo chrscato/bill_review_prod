@@ -137,6 +137,36 @@ class ClinicalIntent:
         
         return intent
     
+    @staticmethod
+    def detect_contrast_from_cpt(cpt_code: str) -> Optional[bool]:
+        """
+        Determine contrast status from a CPT code.
+        
+        Args:
+            cpt_code: CPT code to analyze
+            
+        Returns:
+            bool: True if with contrast, False if without, None if undetermined
+        """
+        # MRI contrast patterns
+        if cpt_code in ["70551", "72141", "72146", "72148", "73218", "73221", "73718", "73721", "74181"]:
+            return False  # Without contrast
+        elif cpt_code in ["70552", "72142", "72147", "72149", "73219", "73222", "73719", "73722", "74182"]:
+            return True   # With contrast
+        elif cpt_code in ["70553", "72156", "72157", "72158", "73220", "73223", "73720", "73723", "74183"]:
+            return True   # With and without contrast (considered as "with")
+            
+        # CT contrast patterns
+        elif cpt_code in ["70450", "71250", "72125", "72128", "72131", "72192", "73200", "73700", "74150", "74176"]:
+            return False  # Without contrast
+        elif cpt_code in ["70460", "71260", "72126", "72129", "72132", "72193", "73201", "73701", "74160", "74177"]:
+            return True   # With contrast
+        elif cpt_code in ["70470", "71270", "72127", "72130", "72133", "72194", "73202", "73702", "74170", "74178"]:
+            return True   # With and without contrast
+
+        # Undetermined - code doesn't follow standard contrast patterns
+        return None
+
     def matches(self, other: 'ClinicalIntent', threshold: float = 70.0) -> bool:
         """
         Determine if this clinical intent matches another one.
@@ -177,6 +207,18 @@ class ClinicalIntent:
             
         # Laterality should match if specified
         if self.laterality and other.laterality and self.laterality != other.laterality:
+            return False
+
+        # STRICT CONTRAST CHECKING
+        # Contrast must match exactly when specified in both
+        if self.contrast is not None and other.contrast is not None:
+            if self.contrast != other.contrast:
+                return False
+        # If one explicitly orders no contrast but the other has contrast, it's a mismatch
+        elif self.contrast is False and other.contrast is True:
+            return False
+        # If one explicitly orders with contrast but the other has none, it's a mismatch  
+        elif self.contrast is True and other.contrast is False:
             return False
             
         # CPT overlap gives higher confidence

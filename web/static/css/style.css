@@ -1,26 +1,356 @@
 /* General Styles */
+html, body {
+    background-color: var(--background-color);
+    color: var(--text-color);
+    min-height: 100vh;
+    margin: 0;
+    padding: 0;
+}
+
 body {
-    background-color: #f8f9fa;
+    background-color: var(--background-color);
+    color: var(--text-color);
 }
 
-/* Header */
-.header {
-    box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+/* Container styles */
+.container-fluid {
+    background-color: var(--background-color);
+    min-height: 100vh;
 }
 
-/* Document List */
+/* Document List Panel */
+.document-list {
+    background-color: var(--card-background);
+    border-right: 1px solid var(--border-color);
+    padding: 1rem;
+    height: calc(100vh - 100px);
+    overflow-y: auto;
+}
+
+.document-list-header {
+    color: var(--text-color);
+    font-weight: 600;
+    margin-bottom: 1rem;
+    padding-bottom: 0.5rem;
+    border-bottom: 1px solid var(--border-color);
+}
+
+/* Document item styles */
 .document-item {
+    border: 1px solid var(--border-color);
+    border-radius: 4px;
+    margin-bottom: 0.75rem;
     cursor: pointer;
-    transition: background-color 0.2s;
-    border-bottom: 1px solid #eee;
+    transition: all 0.2s ease;
+    background-color: var(--card-background);
+    padding: 0.75rem;
 }
 
 .document-item:hover {
-    background-color: #f8f9fa;
+    border-color: var(--button-primary-bg);
+    box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+    transform: translateY(-1px);
+    background-color: var(--table-row-hover);
 }
 
 .document-item.active {
-    background-color: #e9ecef;
+    border-color: var(--button-primary-bg);
+    background-color: var(--table-header-bg);
+    box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+}
+
+/* Document item content */
+.document-item .filename {
+    color: var(--text-color);
+    font-weight: 500;
+    margin-bottom: 0.5rem;
+    font-size: 0.9rem;
+}
+
+.document-item .order-id {
+    color: var(--text-color);
+    opacity: 0.7;
+    font-size: 0.8rem;
+    margin-bottom: 0.5rem;
+}
+
+/* Badge styles */
+.document-item .badge {
+    font-size: 0.75rem;
+    font-weight: 500;
+    margin-right: 0.5rem;
+    margin-bottom: 0.5rem;
+    padding: 0.5em 0.75em;
+    border-radius: 4px;
+    cursor: pointer;
+    transition: all 0.2s ease;
+    display: inline-block;
+    text-decoration: none;
+}
+
+.document-item .badge:hover {
+    transform: translateY(-1px);
+    box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+}
+
+/* Status badge colors */
+.badge.bg-danger {
+    background-color: var(--danger-color) !important;
+    color: var(--badge-text);
+}
+
+.badge.bg-warning {
+    background-color: var(--warning-color) !important;
+    color: var(--text-color);
+}
+
+.badge.bg-info {
+    background-color: var(--info-color) !important;
+    color: var(--badge-text);
+}
+
+.badge.bg-success {
+    background-color: var(--success-color) !important;
+    color: var(--badge-text);
+}
+
+/* Dark mode specific adjustments */
+[data-theme="dark"] .document-list {
+    background-color: var(--card-background);
+    border-right-color: var(--border-color);
+}
+
+[data-theme="dark"] .document-list-header {
+    color: var(--text-color);
+    border-bottom-color: var(--border-color);
+}
+
+[data-theme="dark"] .document-item {
+    border-color: var(--border-color);
+    background-color: var(--card-background);
+}
+
+[data-theme="dark"] .document-item:hover {
+    border-color: var(--button-primary-bg);
+    background-color: var(--table-row-hover);
+}
+
+[data-theme="dark"] .document-item.active {
+    border-color: var(--button-primary-bg);
+    background-color: var(--table-header-bg);
+    box-shadow: 0 2px 4px rgba(0,0,0,0.2);
+}
+
+[data-theme="dark"] .document-item .filename {
+    color: var(--text-color);
+}
+
+[data-theme="dark"] .document-item .order-id {
+    color: var(--text-color);
+    opacity: 0.7;
+}
+
+[data-theme="dark"] .document-item .badge {
+    box-shadow: 0 1px 3px rgba(0,0,0,0.2);
+}
+
+[data-theme="dark"] .document-item .badge:hover {
+    box-shadow: 0 2px 4px rgba(0,0,0,0.3);
+}
+
+/* Remove the old document item styles */
+.document-item .text-truncate {
+    max-width: 300px;
+}
+
+/* Remove the page-specific background colors since they're handled by the body */
+.unauthorized-page,
+.non-global-page,
+.main-page {
+    background-color: transparent;
+}
+
+/* Panel backgrounds */
+#hcfaDetails,
+#dbDetails {
+    background-color: var(--card-background);
+}
+
+/* Header panel backgrounds */
+.bg-light {
+    background-color: var(--table-header-bg) !important;
+}
+
+/* Navigation styling */
+.nav-link {
+    color: var(--header-text);
+    text-decoration: none;
+    padding: 0.5rem 1rem;
+    border-radius: 0.25rem;
+    transition: all 0.2s ease-in-out;
+}
+
+.nav-link:hover {
+    background-color: rgba(255, 255, 255, 0.1);
+}
+
+.nav-link.active-page {
+    background-color: rgba(255, 255, 255, 0.2);
+    font-weight: 500;
+}
+
+/* Header styling */
+.header {
+    background-color: var(--header-bg);
+    color: var(--header-text);
+    box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+    padding: 1rem;
+    margin-bottom: 1rem;
+    border-radius: 0.5rem;
+}
+
+.header h1 {
+    color: #fff;
+    margin: 0;
+    font-size: 1.5rem;
+}
+
+.header p {
+    color: rgba(255, 255, 255, 0.9);
+    margin: 0.5rem 0 0;
+    font-size: 0.9rem;
+}
+
+/* Navigation container */
+.nav-container {
+    display: flex;
+    gap: 0.5rem;
+    margin-top: 0.5rem;
+}
+
+/* Button styling */
+.btn-outline-light {
+    color: var(--header-text);
+    border-color: rgba(255, 255, 255, 0.5);
+    background-color: transparent;
+    transition: all 0.2s ease-in-out;
+}
+
+.btn-outline-light:hover {
+    background-color: rgba(255, 255, 255, 0.1);
+    border-color: var(--header-text);
+}
+
+.btn-outline-light.active-page {
+    background-color: rgba(255, 255, 255, 0.2);
+    border-color: var(--header-text);
+    font-weight: 500;
+}
+
+/* Loading overlay */
+#loadingOverlay {
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background-color: rgba(0, 0, 0, 0.5);
+    display: none;
+    z-index: 9999;
+}
+
+.loading-spinner {
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+}
+
+/* Status badges */
+.status-badge {
+    font-size: 0.75rem;
+    padding: 0.25rem 0.5rem;
+    border-radius: 4px;
+    color: var(--badge-text);
+}
+
+.status-badge.status-critical {
+    background-color: var(--danger-color);
+}
+
+.status-badge.status-non-critical {
+    background-color: var(--warning-color);
+    color: var(--text-color);
+}
+
+/* Editable fields */
+.editable-field {
+    position: relative;
+    background-color: var(--card-background);
+}
+
+.editable-field:hover {
+    background-color: var(--table-row-hover);
+}
+
+.editable-field.editing {
+    background-color: var(--table-row-hover);
+    border-color: var(--border-color);
+}
+
+.editable-field .display-value {
+    padding: 0.25rem 0;
+    min-height: 24px;
+    color: var(--text-color);
+}
+
+.editable-field.editing .display-value {
+    display: none;
+}
+
+.editable-field .edit-container {
+    display: none;
+}
+
+.editable-field.editing .edit-container {
+    display: block;
+}
+
+.editable-field .edit-container input {
+    background-color: var(--input-bg);
+    color: var(--input-text);
+    border-color: var(--input-border);
+}
+
+/* Save button */
+#saveAllChanges {
+    position: fixed;
+    bottom: 20px;
+    right: 20px;
+    z-index: 1000;
+    box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+}
+
+/* Success message */
+.success-message {
+    position: fixed;
+    top: 20px;
+    right: 20px;
+    z-index: 1000;
+    animation: slideIn 0.3s ease-out;
+    background-color: var(--success-color);
+    color: var(--badge-text);
+}
+
+@keyframes slideIn {
+    from {
+        transform: translateX(100%);
+        opacity: 0;
+    }
+    to {
+        transform: translateX(0);
+        opacity: 1;
+    }
 }
 
 /* Status Badge Styles */
@@ -31,7 +361,20 @@ body {
 }
 
 .badge.bg-danger {
-    background-color: #dc3545 !important;
+    background-color: var(--danger-color) !important;
+}
+
+.badge.bg-warning {
+    background-color: var(--warning-color) !important;
+    color: var(--text-color);
+}
+
+/* Special styling for OTA badge */
+.badge.bg-warning[class*="OTA"] {
+    background-color: #ff9800 !important; /* Darker orange */
+    font-weight: 600;
+    padding: 4px 8px;
+    border: 1px solid #e65100;
 }
 
 /* Ensure text truncation works properly */
@@ -46,21 +389,34 @@ body {
 .card {
     border: none;
     box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+    background-color: var(--card-background);
+    border-color: var(--border-color);
 }
 
 .card-header {
-    background-color: #f8f9fa;
-    border-bottom: 1px solid #dee2e6;
+    background-color: var(--table-header-bg);
+    border-bottom: 1px solid var(--border-color);
 }
 
 /* Tables */
+.table {
+    color: var(--text-color);
+}
+
 .table th {
+    background-color: var(--table-header-bg);
+    color: var(--table-header-text);
+    border-color: var(--table-border);
     font-weight: 600;
-    background-color: #f8f9fa;
 }
 
 .table td {
+    border-color: var(--table-border);
     vertical-align: middle;
+}
+
+.table-striped tbody tr:nth-of-type(odd) {
+    background-color: var(--table-row-hover);
 }
 
 /* Loading Overlay */
@@ -83,28 +439,33 @@ body {
 }
 
 ::-webkit-scrollbar-track {
-    background: #f1f1f1;
+    background: var(--scrollbar-track);
 }
 
 ::-webkit-scrollbar-thumb {
-    background: #888;
+    background: var(--scrollbar-thumb);
     border-radius: 4px;
 }
 
 ::-webkit-scrollbar-thumb:hover {
-    background: #555;
+    background: var(--scrollbar-thumb-hover);
 }
 
 /* Alerts */
 .alert {
     margin-bottom: 1rem;
     border-radius: 4px;
+    background-color: var(--alert-bg);
+    color: var(--alert-text);
+    border-color: var(--border-color);
 }
 
 /* Validation Messages */
 .validation-message {
     margin: 0;
     white-space: pre-wrap;
+    background-color: var(--table-header-bg);
+    border-color: var(--border-color);
 }
 
 /* Editable field styles */
@@ -168,12 +529,12 @@ body {
 }
 
 .edit-field.btn-outline-danger {
-    border-color: #dc3545;
-    color: #dc3545;
+    border-color: var(--danger-color);
+    color: var(--danger-color);
 }
 
 .edit-field.btn-outline-danger:hover {
-    background-color: #dc3545;
+    background-color: var(--danger-color);
     color: white;
 }
 
@@ -215,21 +576,13 @@ body {
 }
 
 .is-invalid {
-  border-color: #dc3545;
+  border-color: var(--danger-color);
 }
 
 .provider-info {
   background-color: #f8f9fa;
   padding: 10px;
   border-radius: 5px;
-}
-
-.success-message {
-  position: fixed;
-  top: 20px;
-  right: 20px;
-  z-index: 2000;
-  box-shadow: 0 0.5rem 1rem rgba(0, 0, 0, 0.15);
 }
 
 /* OTA Correction Modal Styles */
@@ -246,12 +599,12 @@ body {
 
 /* Network status indicators */
 .network-status-in {
-  color: #28a745;
+  color: var(--success-color);
   font-weight: bold;
 }
 
 .network-status-out {
-  color: #dc3545;
+  color: var(--danger-color);
   font-weight: bold;
 }
 
@@ -272,14 +625,215 @@ body {
 }
 
 #resolve-bill-button {
-    background-color: #28a745;
+    background-color: var(--success-color);
     color: white;
     font-weight: bold;
     transition: all 0.2s;
 }
 
 #resolve-bill-button:hover {
-    background-color: #218838;
+    background-color: var(--success-color);
     transform: translateY(-2px);
     box-shadow: 0 2px 5px rgba(0,0,0,0.2);
+}
+
+/* Navigation styling */
+.header .btn-outline-light {
+    border-color: rgba(255, 255, 255, 0.5);
+}
+
+.header .btn-outline-light:hover {
+    background-color: rgba(255, 255, 255, 0.1);
+}
+
+/* Highlight active page */
+.header .active-page {
+    background-color: white;
+    color: var(--button-primary-bg);
+    font-weight: bold;
+    border-color: white;
+}
+
+/* Special styling for different page types */
+.unauthorized-page .header {
+    background-color: var(--danger-color);  /* Red for unauthorized services */
+}
+
+.non-global-page .header {
+    background-color: var(--success-color);  /* Green for non-global bills */
+}
+
+/* Theme toggle switch */
+.theme-switch {
+    position: relative;
+    display: inline-block;
+    width: 60px;
+    height: 34px;
+}
+
+.theme-switch input {
+    opacity: 0;
+    width: 0;
+    height: 0;
+}
+
+.theme-switch-slider {
+    position: absolute;
+    cursor: pointer;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background-color: var(--button-secondary-bg);
+    transition: .4s;
+    border-radius: 34px;
+}
+
+.theme-switch-slider:before {
+    position: absolute;
+    content: "";
+    height: 26px;
+    width: 26px;
+    left: 4px;
+    bottom: 4px;
+    background-color: var(--header-text);
+    transition: .4s;
+    border-radius: 50%;
+}
+
+input:checked + .theme-switch-slider {
+    background-color: var(--button-primary-bg);
+}
+
+input:checked + .theme-switch-slider:before {
+    transform: translateX(26px);
+}
+
+/* Dark mode specific adjustments */
+[data-theme="dark"] .form-control:disabled,
+[data-theme="dark"] .form-select:disabled {
+    background-color: var(--table-header-bg);
+    color: var(--text-color);
+}
+
+[data-theme="dark"] .modal-backdrop {
+    background-color: rgba(0, 0, 0, 0.8);
+}
+
+[data-theme="dark"] .validation-message {
+    background-color: var(--table-header-bg);
+    border-color: var(--border-color);
+}
+
+/* Field names and sections */
+.field-name {
+    color: var(--text-color);
+    font-weight: 500;
+}
+
+.section-header {
+    color: var(--text-color);
+    font-weight: 600;
+    background-color: var(--table-header-bg);
+    padding: 0.5rem;
+    margin-bottom: 0.5rem;
+    border-radius: 4px;
+}
+
+/* Provider info section */
+.provider-info {
+    background-color: var(--table-header-bg);
+    padding: 10px;
+    border-radius: 5px;
+    color: var(--text-color);
+}
+
+/* Table headers */
+.table th {
+    background-color: var(--table-header-bg);
+    color: var(--table-header-text);
+    border-color: var(--table-border);
+    font-weight: 600;
+}
+
+/* Card headers */
+.card-header {
+    background-color: var(--table-header-bg);
+    color: var(--table-header-text);
+    border-bottom: 1px solid var(--border-color);
+}
+
+/* Form labels */
+.form-label {
+    color: var(--text-color);
+}
+
+/* Input fields */
+.form-control, .form-select {
+    background-color: var(--input-bg);
+    color: var(--input-text);
+    border-color: var(--input-border);
+}
+
+.form-control:focus, .form-select:focus {
+    background-color: var(--input-bg);
+    color: var(--input-text);
+    border-color: var(--button-primary-bg);
+}
+
+/* Dark mode specific adjustments */
+[data-theme="dark"] .field-name {
+    color: var(--text-color);
+}
+
+[data-theme="dark"] .section-header {
+    background-color: var(--table-header-bg);
+    color: var(--text-color);
+}
+
+[data-theme="dark"] .provider-info {
+    background-color: var(--table-header-bg);
+    color: var(--text-color);
+}
+
+[data-theme="dark"] .form-control:disabled,
+[data-theme="dark"] .form-select:disabled {
+    background-color: var(--table-header-bg);
+    color: var(--text-color);
+}
+
+[data-theme="dark"] .card-header {
+    background-color: var(--table-header-bg);
+    color: var(--text-color);
+}
+
+[data-theme="dark"] .table th {
+    background-color: var(--table-header-bg);
+    color: var(--text-color);
+}
+
+[data-theme="dark"] .form-label {
+    color: var(--text-color);
+}
+
+[data-theme="dark"] .validation-message {
+    background-color: var(--table-header-bg);
+    color: var(--text-color);
+    border-color: var(--border-color);
+}
+
+[data-theme="dark"] .editable-field .display-value {
+    color: var(--text-color);
+}
+
+[data-theme="dark"] .editable-field.editing .edit-container input {
+    background-color: var(--input-bg);
+    color: var(--input-text);
+    border-color: var(--input-border);
+}
+
+[data-theme="dark"] .editable-field.editing .edit-container input:focus {
+    background-color: var(--input-bg);
+    color: var(--input-text);
+    border-color: var(--button-primary-bg);
 } 
