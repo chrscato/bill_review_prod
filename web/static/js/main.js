@@ -564,6 +564,10 @@ document.addEventListener('DOMContentLoaded', function() {
         defaultFilter = 'unauthorized';
     } else if (pathname === '/non-global') {
         defaultFilter = 'component';
+    } else if (pathname === '/rate-corrections') {
+        defaultFilter = 'rate';
+    } else if (pathname === '/ota') {
+        defaultFilter = 'ota';
     }
     
     // Set the status filter if it exists
@@ -885,46 +889,42 @@ async function selectDocument(doc) {
             buttonContainer.className = 'd-flex gap-2 mt-3';
             buttonContainer.id = 'action-buttons';
 
-            // Get provider info
+            // Get provider info to determine network status
             const providerInfo = dbData?.provider_details || {};
-            const networkStatus = providerInfo.provider_network || 
-                                 providerInfo.network_status || '';
-            
-            // Determine if in-network or out-of-network
-            const isInNetwork = networkStatus.toLowerCase().includes('in-network') || 
-                               networkStatus.toLowerCase().includes('in network');
-            
-            console.log('Provider network status:', { networkStatus, isInNetwork });
-            
-            // Add the appropriate button based on network status
-            if (isInNetwork) {
-                // Add fix rates button for in-network
+            const providerNetwork = providerInfo.provider_network || '';
+            const isInNetwork = providerNetwork.toLowerCase().includes('in network') || 
+                               providerNetwork.toLowerCase().includes('in-network');
+            const isOutOfNetwork = providerNetwork.toLowerCase().includes('out of network') || 
+                                 providerNetwork.toLowerCase().includes('out-of-network');
+
+            // Check if this has a rate issue
+            const hasRateIssue = jsonResult.data.validation_messages?.some(msg => 
+                msg.toLowerCase().includes('rate validation failed') ||
+                msg.toLowerCase().includes('rate issue'));
+
+            // For in-network providers or providers with unknown status, show the Fix Rate Issue button
+            if (hasRateIssue && (isInNetwork || (!isInNetwork && !isOutOfNetwork))) {
                 const fixButton = document.createElement('button');
                 fixButton.className = 'btn btn-primary';
                 fixButton.id = 'fix-rate-button';
-                fixButton.textContent = 'Fix Rate Issues';
+                fixButton.textContent = 'INN Fix Rates';
                 fixButton.onclick = function() {
-                    console.log('Rate correction button clicked');
-                    console.log('showRateCorrectionModal available:', typeof window.showRateCorrectionModal === 'function');
-                    
                     if (typeof window.showRateCorrectionModal === 'function') {
                         window.showRateCorrectionModal(jsonResult.data);
                     } else {
-                        console.error('Rate correction function not found');
-                        showErrorMessage('Error: Rate correction functionality not loaded. Please refresh the page and try again.');
+                        showErrorMessage('Error: Rate correction functionality not loaded.');
                     }
                 };
                 buttonContainer.appendChild(fixButton);
-            } else {
-                // Add OTA button for out-of-network
+            }
+
+            // For out-of-network providers or providers with unknown status, show the OTA button
+            if (hasRateIssue && (isOutOfNetwork || (!isInNetwork && !isOutOfNetwork))) {
                 const otaButton = document.createElement('button');
                 otaButton.className = 'btn btn-secondary';
                 otaButton.id = 'add-ota-button';
-                otaButton.textContent = 'Add OTA Rates';
+                otaButton.textContent = 'OON Add OTA Rates';
                 otaButton.onclick = function() {
-                    console.log('OTA correction button clicked');
-                    console.log('showOTACorrectionModal available:', typeof window.showOTACorrectionModal === 'function');
-                    
                     if (typeof window.showOTACorrectionModal === 'function') {
                         const combinedData = {
                             ...jsonResult.data,
@@ -932,14 +932,13 @@ async function selectDocument(doc) {
                         };
                         window.showOTACorrectionModal(combinedData);
                     } else {
-                        console.error('OTA correction function not found');
-                        showErrorMessage('Error: OTA correction functionality not loaded. Please refresh the page and try again.');
+                        showErrorMessage('Error: OTA correction functionality not loaded.');
                     }
                 };
                 buttonContainer.appendChild(otaButton);
             }
 
-            // Always add the resolve button
+            // Always add the Bill Resolved button
             const resolveButton = document.createElement('button');
             resolveButton.className = 'btn btn-success';
             resolveButton.id = 'resolve-bill-button';
@@ -954,7 +953,7 @@ async function selectDocument(doc) {
             buttonContainer.appendChild(resolveButton);
 
             // Add the button container after validation messages
-            const messagesElement = hcfaDetails.querySelector('.card-body');
+            const messagesElement = document.getElementById('hcfaDetails').querySelector('.card-body');
             if (messagesElement) {
                 messagesElement.appendChild(buttonContainer);
             }
@@ -1398,24 +1397,36 @@ function updateStatusFilter(failures, pageType) {
     } else if (pageType === 'component') {
         statusFilter.options[0].value = 'component';
         statusFilter.options[0].textContent = 'All Non-Global';
+    } else if (pageType === 'rate') {
+        statusFilter.options[0].value = 'rate';
+        statusFilter.options[0].textContent = 'All Rate Issues';
+    } else if (pageType === 'ota') {
+        statusFilter.options[0].value = 'ota';
+        statusFilter.options[0].textContent = 'All OTA Issues';
     }
     
-    // For unauthorized services page, add specific sub-categories
-    if (pageType === 'unauthorized') {
-        addOptionIfNotExists(statusFilter, 'missing_cpt', 'Missing CPT');
-        addOptionIfNotExists(statusFilter, 'wrong_cpt', 'Wrong CPT');
-        addOptionIfNotExists(statusFilter, 'extra_cpt', 'Extra Services');
+    // For rate corrections page, add specific sub-categories
+    if (pageType === 'rate') {
+        addOptionIfNotExists(statusFilter, 'missing_rate', 'Missing Rate');
+        addOptionIfNotExists(statusFilter, 'incorrect_rate', 'Incorrect Rate');
+        addOptionIfNotExists(statusFilter, 'bundle_rate', 'Bundle Rate Issues');
     }
     
-    // For non-global bills page, add specific sub-categories
-    if (pageType === 'component') {
-        addOptionIfNotExists(statusFilter, 'tc', 'Technical Component (TC)');
-        addOptionIfNotExists(statusFilter, '26', 'Professional Component (26)');
+    // For OTA page, add specific sub-categories
+    if (pageType === 'ota') {
+        addOptionIfNotExists(statusFilter, 'new_ota', 'New OTA');
+        addOptionIfNotExists(statusFilter, 'ota_revision', 'OTA Revision');
     }
     
-    // For main page, add all categories as before
+    // For main page, add all categories
     if (pageType === 'all') {
-        // Extract unique failure types as before
+        // Add our special categories
+        addOptionIfNotExists(statusFilter, 'unauthorized', 'Unauthorized Services');
+        addOptionIfNotExists(statusFilter, 'component', 'Non-Global Bills');
+        addOptionIfNotExists(statusFilter, 'rate', 'Rate Corrections');
+        addOptionIfNotExists(statusFilter, 'ota', 'OTA');
+        
+        // Extract unique failure types
         const uniqueTypes = new Set();
         failures.forEach(failure => {
             const types = extractFailureTypes(failure);
@@ -1426,10 +1437,6 @@ function updateStatusFilter(failures, pageType) {
         uniqueTypes.forEach(type => {
             addOptionIfNotExists(statusFilter, type.toLowerCase(), type);
         });
-        
-        // Also add our special categories
-        addOptionIfNotExists(statusFilter, 'unauthorized', 'Unauthorized Services');
-        addOptionIfNotExists(statusFilter, 'component', 'Non-Global Bills');
     }
     
     // Restore previous selection if it still exists
@@ -1458,180 +1465,125 @@ function filterFailuresByStatus(failures, selectedStatus) {
         return failures;
     }
     
-    return failures.filter(failure => {
-        if (!failure.validation_messages) return false;
-        
-        // Convert validation messages to lowercase for easier comparison
-        const messages = failure.validation_messages.map(msg => msg.toLowerCase());
-        
-        // Check for unauthorized services
-        if (selectedStatus === 'unauthorized') {
-            return messages.some(msg => 
-                msg.includes('missing cpt') ||
-                msg.includes('wrong cpt') ||
-                msg.includes('extra services') ||
-                msg.includes('missing line items') ||
-                msg.includes('mismatched cpt') ||
-                msg.includes('unauthorized service')
-            );
-        }
-        
-        // Check for specific unauthorized sub-categories
-        if (selectedStatus === 'missing_cpt') {
-            return messages.some(msg => msg.includes('missing cpt'));
-        }
-        
-        if (selectedStatus === 'wrong_cpt') {
-            return messages.some(msg => msg.includes('mismatched cpt'));
-        }
-        
-        if (selectedStatus === 'extra_cpt') {
-            return messages.some(msg => msg.includes('extra services'));
-        }
-        
-        // Check for component modifiers (non-global bills)
-        if (selectedStatus === 'component') {
-            // First check validation messages for non-global indicators
-            const hasNonGlobalMessage = messages.some(msg => 
-                msg.toLowerCase().includes('non-global bill') ||
-                msg.toLowerCase().includes('professional component') ||
-                msg.toLowerCase().includes('technical component')
-            );
+    // Rate issues filter
+    if (selectedStatus === 'rate') {
+        return failures.filter(failure => {
+            // Check if there are any rate-related issues
+            if (failure.validation_messages) {
+                return failure.validation_messages.some(msg => 
+                    msg.toLowerCase().includes('rate validation failed') ||
+                    msg.toLowerCase().includes('rate issue') ||
+                    msg.toLowerCase().includes('missing rate') ||
+                    (msg.includes('RATE') && msg.includes('Validation Failed')));
+            }
             
-            if (hasNonGlobalMessage) return true;
+            // Check failure types
+            if (failure.failure_types && failure.failure_types.includes('RATE')) {
+                return true;
+            }
             
-            // Then check service lines for TC or 26 modifiers
-            const hasComponentModifier = failure.service_lines?.some(line => {
-                // Handle different possible modifier formats
-                let modifiers = line.modifiers;
-                if (!modifiers) return false;
-                
-                // Convert to array if it's a string
-                if (typeof modifiers === 'string') {
-                    modifiers = modifiers.split(',').map(m => m.trim());
+            return false;
+        });
+    }
+    
+    // Handle other existing filters...
+    if (selectedStatus === 'unauthorized') {
+        return failures.filter(failure => _is_unauthorized_service(failure));
+    }
+    
+    if (selectedStatus === 'component') {
+        return failures.filter(failure => _has_component_modifiers(failure));
+    }
+    
+    return failures;
+}
+
+// Helper functions that match the server-side logic
+function _needs_rate_correction(failure) {
+    // Rate validation failure for in-network provider
+    if (!failure.validation_messages) return false;
+    
+    const hasRateFailure = failure.validation_messages.some(msg => 
+        msg.toLowerCase().includes('rate validation failed') ||
+        msg.toLowerCase().includes('rate issue'));
+    
+    if (!hasRateFailure) return false;
+    
+    // Check if provider is in-network
+    const providerNetwork = failure.database_details?.provider_details?.provider_network || '';
+    const isInNetwork = providerNetwork.toLowerCase().includes('in network') || 
+                       providerNetwork.toLowerCase().includes('in-network');
+    
+    return hasRateFailure && isInNetwork;
+}
+
+function _needs_ota(failure) {
+    // Rate validation failure for out-of-network provider
+    if (!failure.validation_messages) return false;
+    
+    const hasRateFailure = failure.validation_messages.some(msg => 
+        msg.toLowerCase().includes('rate validation failed') ||
+        msg.toLowerCase().includes('rate issue'));
+    
+    if (!hasRateFailure) return false;
+    
+    // Check if provider is out-of-network
+    const providerNetwork = failure.database_details?.provider_details?.provider_network || '';
+    const isOutOfNetwork = providerNetwork.toLowerCase().includes('out of network') || 
+                          providerNetwork.toLowerCase().includes('out-of-network');
+    
+    return hasRateFailure && isOutOfNetwork;
+}
+
+// Helper functions that match the server-side logic
+function _is_unauthorized_service(failure) {
+    // Look for LINE_ITEMS validation failures
+    if (failure.validation_messages) {
+        for (const message of failure.validation_messages) {
+            if ((message.includes('LINE_ITEMS') && message.includes('Validation Failed')) || 
+                message.toLowerCase().includes('missing from order')) {
+                return true;
+            }
+        }
+    }
+    
+    // Check failure types
+    if (failure.failure_types && failure.failure_types.includes('LINE_ITEMS')) {
+        return true;
+    }
+    
+    return false;
+}
+
+function _has_component_modifiers(failure) {
+    // Check service lines for TC or 26 modifiers
+    if (failure.service_lines) {
+        for (const line of failure.service_lines) {
+            if (Array.isArray(line.modifiers)) {
+                if (line.modifiers.includes('TC') || line.modifiers.includes('26')) {
+                    return true;
                 }
-                
-                // Ensure it's an array
-                if (!Array.isArray(modifiers)) {
-                    modifiers = [String(modifiers)];
+            } else if (typeof line.modifiers === 'string') {
+                if (line.modifiers.includes('TC') || line.modifiers.includes('26')) {
+                    return true;
                 }
-                
-                // Check for TC or 26 modifiers (case insensitive)
-                return modifiers.some(mod => 
-                    mod.toLowerCase() === 'tc' || 
-                    mod.toLowerCase() === '26' ||
-                    mod.toLowerCase().includes('tc') ||
-                    mod.toLowerCase().includes('26')
-                );
-            });
-            
-            return hasComponentModifier;
+            }
         }
-        
-        // Check for specific component sub-categories
-        if (selectedStatus === 'tc') {
-            // First check validation messages
-            const hasTCMessage = messages.some(msg => 
-                msg.toLowerCase().includes('technical component')
-            );
-            
-            if (hasTCMessage) return true;
-            
-            // Then check service lines
-            return failure.service_lines?.some(line => {
-                let modifiers = line.modifiers;
-                if (!modifiers) return false;
-                
-                if (typeof modifiers === 'string') {
-                    modifiers = modifiers.split(',').map(m => m.trim());
-                }
-                
-                if (!Array.isArray(modifiers)) {
-                    modifiers = [String(modifiers)];
-                }
-                
-                return modifiers.some(mod => 
-                    mod.toLowerCase() === 'tc' || 
-                    mod.toLowerCase().includes('tc')
-                );
-            });
+    }
+    
+    // Check validation messages
+    if (failure.validation_messages) {
+        for (const message of failure.validation_messages) {
+            if (message.toLowerCase().includes('technical component') || 
+                message.toLowerCase().includes('professional component') || 
+                message.includes('modifier TC') || 
+                message.includes('modifier 26')) {
+                return true;
+            }
         }
-        
-        if (selectedStatus === '26') {
-            // First check validation messages
-            const has26Message = messages.some(msg => 
-                msg.toLowerCase().includes('professional component')
-            );
-            
-            if (has26Message) return true;
-            
-            // Then check service lines
-            return failure.service_lines?.some(line => {
-                let modifiers = line.modifiers;
-                if (!modifiers) return false;
-                
-                if (typeof modifiers === 'string') {
-                    modifiers = modifiers.split(',').map(m => m.trim());
-                }
-                
-                if (!Array.isArray(modifiers)) {
-                    modifiers = [String(modifiers)];
-                }
-                
-                return modifiers.some(mod => 
-                    mod.toLowerCase() === '26' || 
-                    mod.toLowerCase().includes('26')
-                );
-            });
-        }
-        
-        // Check for OTA filter
-        if (selectedStatus.toLowerCase() === 'ota') {
-            // Must have rate validation failure
-            const hasRateFailure = messages.some(msg => 
-                msg.includes('rate validation failed') ||
-                msg.includes('rate issue') ||
-                msg.includes('rate problem')
-            );
-            
-            // Must be out of network
-            const providerInfo = failure.database_details?.provider_details || {};
-            const networkStatus = providerInfo.provider_network || 
-                                providerInfo.network_status || 
-                                providerInfo['Provider Network'] || '';
-            const isOutOfNetwork = networkStatus.toLowerCase().includes('out of network') || 
-                                  networkStatus.toLowerCase().includes('out-of-network');
-            
-            return hasRateFailure && isOutOfNetwork;
-        }
-        
-        // Check for rate validation messages
-        if (selectedStatus.toLowerCase() === 'rate') {
-            return messages.some(msg => 
-                msg.includes('rate validation failed')
-            );
-        }
-        
-        // Check for line items validation messages
-        if (selectedStatus.toLowerCase() === 'line_items') {
-            return messages.some(msg => 
-                msg.includes('line items validation failed') ||
-                msg.includes('line_items validation failed')
-            );
-        }
-        
-        // Check for intent validation messages
-        if (selectedStatus.toLowerCase() === 'intent') {
-            return messages.some(msg => 
-                msg.includes('intent validation failed') ||
-                msg.includes('intent mismatch')
-            );
-        }
-        
-        // For other status types, check failure_types
-        if (!failure.failure_types) return false;
-        return failure.failure_types.includes(selectedStatus.toUpperCase());
-    });
+    }
+    
+    return false;
 }
 
 // Function to display failures in the document list

@@ -836,4 +836,56 @@ input:checked + .theme-switch-slider:before {
     background-color: var(--input-bg);
     color: var(--input-text);
     border-color: var(--button-primary-bg);
+}
+
+/* Page-specific header colors */
+.rate-page .header {
+    background-color: #6f42c1;  /* Purple for rate corrections */
+}
+
+.ota-page .header {
+    background-color: #fd7e14;  /* Orange for OTA */
+}
+
+/* Specific button styling for rate pages */
+#fix-rate-button {
+    background-color: #6f42c1;
+    border-color: #6f42c1;
+}
+
+#fix-rate-button:hover {
+    background-color: #5a32a3;
+    border-color: #5a32a3;
+}
+
+/* Specific button styling for OTA pages */
+#add-ota-button {
+    background-color: #fd7e14;
+    border-color: #fd7e14;
+    color: white;
+}
+
+#add-ota-button:hover {
+    background-color: #e76b08;
+    border-color: #e76b08;
+}
+
+/* Rate correction modal styles */
+#rateCorrectionModal .modal-header {
+    background-color: #6f42c1;
+    color: white;
+}
+
+#rateCorrectionModal .modal-header .btn-close {
+    color: white;
+}
+
+/* OTA modal styles */
+#otaCorrectionModal .modal-header {
+    background-color: #fd7e14;
+    color: white;
+}
+
+#otaCorrectionModal .modal-header .btn-close {
+    color: white;
 } 

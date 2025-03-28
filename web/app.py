@@ -120,6 +120,16 @@ def non_global_bills():
     """Render the non-global bills page."""
     return render_template('non_global.html')
 
+@app.route('/rate-corrections')
+def rate_corrections():
+    """Render the rate corrections page."""
+    return render_template('rate_corrections.html')
+
+@app.route('/ota')
+def ota_review():
+    """Render the OTA review page."""
+    return render_template('ota.html')
+
 @app.route('/api/failures')
 def get_failures():
     """API endpoint to get all validation failures with filtering options."""
@@ -137,6 +147,9 @@ def get_failures():
         elif filter_type == 'component':
             # Filter for non-global bills (TC/26 modifiers)
             failed_files = [f for f in failed_files if _has_component_modifiers(f)]
+        elif filter_type == 'rate':
+            # Filter for rate issues (both in-network and out-of-network)
+            failed_files = [f for f in failed_files if _has_rate_issue(f)]
         
         return jsonify({
             'status': 'success',
@@ -185,6 +198,24 @@ def _has_component_modifiers(failure):
                'modifier 26' in message:
                 return True
                 
+    return False
+
+def _has_rate_issue(failure):
+    """Check if failure has any rate-related issues."""
+    # Look for RATE validation failures in messages
+    if 'validation_messages' in failure:
+        for message in failure['validation_messages']:
+            if ('RATE' in message and 'Validation Failed' in message) or \
+               'rate validation failed' in message.lower() or \
+               'rate issue' in message.lower() or \
+               'no rate found' in message.lower() or \
+               'missing rate' in message.lower():
+                return True
+    
+    # Check failure types
+    if 'failure_types' in failure and 'RATE' in failure['failure_types']:
+        return True
+    
     return False
 
 @app.route('/api/failures/<filename>')
