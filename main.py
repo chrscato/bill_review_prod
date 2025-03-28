@@ -332,8 +332,63 @@ class BillReviewApplication:
                     with open(target_path, 'w', encoding='utf-8') as f:
                         json.dump(file_data, f, indent=2)
                 else:
-                    # For successful validations, just move the file
-                    shutil.copy2(file_path, target_path)
+                    # For successful validations, enhance the JSON with additional details
+                    # Read the original file
+                    with open(file_path, 'r', encoding='utf-8') as f:
+                        file_data = json.load(f)
+                    
+                    # Add validation status and messages
+                    file_data['validation_status'] = "PASS"
+                    file_data['validation_messages'] = overall_messages
+                    
+                    # Add rate information if available
+                    rate_validation = validation_results.get('rate', {})
+                    if rate_validation and 'results' in rate_validation:
+                        # Extract rate details
+                        rate_details = []
+                        for line in rate_validation['results']:
+                            if line.get('status') == 'PASS':
+                                rate_details.append({
+                                    'cpt': line.get('cpt'),
+                                    'assigned_rate': line.get('validated_rate'),
+                                    'rate_source': line.get('rate_source'),
+                                    'is_bundled': line.get('is_bundled', False),
+                                    'bundle_name': line.get('bundle_name', None)
+                                })
+                        file_data['assigned_rates'] = rate_details
+                        file_data['total_assigned_rate'] = rate_validation.get('total_rate', 0)
+                    
+                    # Add order details from database
+                    if order_details:
+                        order_info = order_details.get('order_details', {})
+                        clean_order_details = {
+                            'FileMaker_Record_Number': order_info.get('FileMaker_Record_Number'),
+                            'PatientName': order_info.get('PatientName'),
+                            'Patient_DOB': order_info.get('Patient_DOB'),
+                            'Patient_Injury_Date': order_info.get('Patient_Injury_Date'),
+                            'Jurisdiction_State': order_info.get('Jurisdiction_State')
+                        }
+                        file_data['order_details'] = clean_order_details
+                    
+                    # Add provider details from database
+                    if provider_info:
+                        clean_provider_info = {
+                            'Billing_Name': provider_info.get('Billing Name'),
+                            'Billing_Address': {
+                                'Address': provider_info.get('Billing Address 1'),
+                                'City': provider_info.get('Billing Address City'),
+                                'State': provider_info.get('Billing Address State'),
+                                'Postal_Code': provider_info.get('Billing Address Postal Code')
+                            }
+                        }
+                        file_data['provider_details'] = clean_provider_info
+                    
+                    # Add validation timestamp
+                    file_data['validation_timestamp'] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+                    
+                    # Write the enhanced file to the success directory
+                    with open(target_path, 'w', encoding='utf-8') as f:
+                        json.dump(file_data, f, indent=2)
                 
                 # Add to results list
                 self.validation_results.append(validation_result)
