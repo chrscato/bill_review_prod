@@ -1,257 +1,209 @@
-<!DOCTYPE html>
-<html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>{% block title %}Bill Review System{% endblock %}</title>
-    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/css/bootstrap.min.css" rel="stylesheet">
-    <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.8.0/font/bootstrap-icons.css" rel="stylesheet">
-    <link href="{{ url_for('static', filename='css/themes.css') }}" rel="stylesheet">
-    <link href="{{ url_for('static', filename='css/style.css') }}" rel="stylesheet">
-    <link href="{{ url_for('static', filename='css/editable.css') }}" rel="stylesheet">
-</head>
-<body class="{% block body_class %}main-page{% endblock %}">
-    <div class="container-fluid p-0">
-        <!-- Header -->
-        <div class="header bg-primary text-white p-3">
-            <div class="d-flex justify-content-between align-items-center">
-                <div>
-                    <h4 class="mb-0">{% block page_header %}Bill Review System{% endblock %}</h4>
-                    <small>{% block page_description %}Review and correct billing errors{% endblock %}</small>
-                </div>
-                <div class="d-flex gap-2 align-items-center">
-                    <input type="text" id="searchInput" class="form-control form-control-sm" placeholder="Search...">
-                    <select id="statusFilter" class="form-select form-select-sm">
-                        <option value="{% block filter_default %}all{% endblock %}">All Types</option>
-                    </select>
-                    <button id="refreshBtn" class="btn btn-light btn-sm">Refresh</button>
-                    
-                    <!-- Dark Mode Toggle -->
-                    <div class="form-check form-switch ms-2">
-                        <input class="form-check-input" type="checkbox" id="darkModeSwitch">
-                        <label class="form-check-label text-white" for="darkModeSwitch">
-                            <i class="bi bi-sun-fill"></i>
-                        </label>
-                    </div>
-                </div>
+{% extends "base.html" %}
+
+{% block title %}Bill Review System{% endblock %}
+
+{% block page_header %}Bill Review System{% endblock %}
+
+{% block page_description %}Review and correct billing errors{% endblock %}
+
+{% block body_class %}main-page{% endblock %}
+
+{% block header_controls %}
+<input type="text" id="searchInput" class="form-control form-control-sm" placeholder="Search...">
+<select id="statusFilter" class="form-select form-select-sm">
+    <option value="{% block filter_default %}all{% endblock %}">All Types</option>
+</select>
+{% endblock %}
+
+{% block content %}
+<div class="row g-0" style="height: calc(100vh - 100px);">
+    <!-- Document List -->
+    <div class="col-md-2 border-end">
+        <div class="h-100 d-flex flex-column">
+            <div class="p-2 border-bottom">
+                <h6 class="mb-0 small">Files</h6>
             </div>
-            
-            <!-- Navigation -->
-            <div class="nav-container">
-                <a href="/" class="btn btn-outline-light {% if request.path == '/' %}active-page{% endif %}">
-                    All Issues
-                </a>
-                <a href="/unauthorized" class="btn btn-outline-light {% if request.path == '/unauthorized' %}active-page{% endif %}">
-                    Unauthorized Services
-                </a>
-                <a href="/non-global" class="btn btn-outline-light {% if request.path == '/non-global' %}active-page{% endif %}">
-                    Non-Global Bills
-                </a>
-                <a href="/rate-corrections" class="btn btn-outline-light {% if request.path == '/rate-corrections' %}active-page{% endif %}">
-                    Rate Issues
-                </a>
+            <div id="documentList" class="document-list">
+                <!-- Document items will be inserted here -->
             </div>
         </div>
+    </div>
 
-        <!-- Main Content -->
-        <div class="row g-0" style="height: calc(100vh - 100px);">
-            <!-- Document List -->
-            <div class="col-md-2 border-end">
+    <!-- Details Panels -->
+    <div class="col-md-10">
+        <div class="row g-0 h-100">
+            <!-- Provider Bill (JSON) Panel -->
+            <div class="col-md-6 border-end">
                 <div class="h-100 d-flex flex-column">
-                    <div class="p-2 border-bottom">
-                        <h6 class="mb-0 small">Files</h6>
+                    <div class="p-3 border-bottom bg-light">
+                        <h6 class="mb-0 text-primary">Provider Bill</h6>
                     </div>
-                    <div id="documentList" class="flex-grow-1 overflow-auto">
-                        <!-- Document items will be inserted here -->
+                    <div id="hcfaDetails" class="flex-grow-1 overflow-auto p-3">
+                        <!-- HCFA details will be inserted here -->
                     </div>
                 </div>
             </div>
 
-            <!-- Details Panels -->
-            <div class="col-md-10">
-                <div class="row g-0 h-100">
-                    <!-- Provider Bill (JSON) Panel -->
-                    <div class="col-md-6 border-end">
-                        <div class="h-100 d-flex flex-column">
-                            <div class="p-3 border-bottom bg-light">
-                                <h6 class="mb-0 text-primary">Provider Bill</h6>
-                            </div>
-                            <div id="hcfaDetails" class="flex-grow-1 overflow-auto p-3">
-                                <!-- HCFA details will be inserted here -->
-                            </div>
+            <!-- FileMaker (Database) Panel -->
+            <div class="col-md-6">
+                <div class="h-100 d-flex flex-column">
+                    <div class="p-3 border-bottom bg-light">
+                        <h6 class="mb-0 text-success">FileMaker</h6>
+                    </div>
+                    <div id="dbDetails" class="flex-grow-1 overflow-auto p-3">
+                        <!-- Database details will be inserted here -->
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Rate Correction Modal -->
+<div class="modal fade" id="rateCorrectionModal" tabindex="-1" aria-labelledby="rateCorrectionModalLabel" aria-hidden="true">
+    <div class="modal-dialog modal-lg">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title" id="rateCorrectionModalLabel">Fix Rate Issues</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body">
+                <!-- Provider Information -->
+                <div class="provider-info mb-3">
+                    <h6>Provider Information</h6>
+                    <div class="row">
+                        <div class="col-md-4">
+                            <p><strong>TIN:</strong> <span id="provider-tin"></span></p>
+                        </div>
+                        <div class="col-md-4">
+                            <p><strong>Name:</strong> <span id="provider-name"></span></p>
+                        </div>
+                        <div class="col-md-4">
+                            <p><strong>Network:</strong> <span id="provider-network"></span></p>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Tabs for correction methods -->
+                <ul class="nav nav-tabs" id="correctionTabs" role="tablist">
+                    <li class="nav-item" role="presentation">
+                        <button class="nav-link active" id="line-item-tab" data-bs-toggle="tab" data-bs-target="#line-item-correction" type="button" role="tab">Line Item Correction</button>
+                    </li>
+                    <li class="nav-item" role="presentation">
+                        <button class="nav-link" id="category-tab" data-bs-toggle="tab" data-bs-target="#category-correction" type="button" role="tab">Category Correction</button>
+                    </li>
+                </ul>
+
+                <!-- Tab content -->
+                <div class="tab-content mt-3" id="correctionTabContent">
+                    <!-- Line Item Correction -->
+                    <div class="tab-pane fade show active" id="line-item-correction" role="tabpanel">
+                        <div class="alert alert-info">Enter rates for individual CPT codes</div>
+                        <div class="table-responsive">
+                            <table class="table table-striped" id="line-items-table">
+                                <thead>
+                                    <tr>
+                                        <th>CPT Code</th>
+                                        <th>Description</th>
+                                        <th>Current Rate</th>
+                                        <th>New Rate</th>
+                                        <th>Procedure Category</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="line-items-body">
+                                    <!-- Will be populated dynamically -->
+                                </tbody>
+                            </table>
                         </div>
                     </div>
 
-                    <!-- FileMaker (Database) Panel -->
-                    <div class="col-md-6">
-                        <div class="h-100 d-flex flex-column">
-                            <div class="p-3 border-bottom bg-light">
-                                <h6 class="mb-0 text-success">FileMaker</h6>
-                            </div>
-                            <div id="dbDetails" class="flex-grow-1 overflow-auto p-3">
-                                <!-- Database details will be inserted here -->
-                            </div>
+                    <!-- Category Correction -->
+                    <div class="tab-pane fade" id="category-correction" role="tabpanel">
+                        <div class="alert alert-info">Set rates by category to update multiple CPT codes at once</div>
+                        <div class="table-responsive">
+                            <table class="table table-striped" id="category-table">
+                                <thead>
+                                    <tr>
+                                        <th>Category</th>
+                                        <th>CPT Codes</th>
+                                        <th>Rate</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="category-body">
+                                    <!-- Will be populated dynamically -->
+                                </tbody>
+                            </table>
                         </div>
                     </div>
                 </div>
             </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                <button type="button" class="btn btn-primary" id="save-rate-corrections">Save Corrections</button>
+            </div>
         </div>
     </div>
+</div>
 
-    <!-- Loading Overlay -->
-    <div id="loadingOverlay" class="loading-overlay">
-        <div class="spinner-border text-primary" role="status">
-            <span class="visually-hidden">Loading...</span>
-        </div>
-    </div>
-
-    <!-- Rate Correction Modal -->
-    <div class="modal fade" id="rateCorrectionModal" tabindex="-1" aria-labelledby="rateCorrectionModalLabel" aria-hidden="true">
-      <div class="modal-dialog modal-lg">
+<!-- OTA Correction Modal -->
+<div class="modal fade" id="otaCorrectionModal" tabindex="-1" aria-labelledby="otaCorrectionModalLabel" aria-hidden="true">
+    <div class="modal-dialog modal-lg">
         <div class="modal-content">
-          <div class="modal-header">
-            <h5 class="modal-title" id="rateCorrectionModalLabel">Fix Rate Issues</h5>
-            <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
-          </div>
-          <div class="modal-body">
-            <!-- Provider Information -->
-            <div class="provider-info mb-3">
-              <h6>Provider Information</h6>
-              <div class="row">
-                <div class="col-md-4">
-                  <p><strong>TIN:</strong> <span id="provider-tin"></span></p>
-                </div>
-                <div class="col-md-4">
-                  <p><strong>Name:</strong> <span id="provider-name"></span></p>
-                </div>
-                <div class="col-md-4">
-                  <p><strong>Network:</strong> <span id="provider-network"></span></p>
-                </div>
-              </div>
+            <div class="modal-header">
+                <h5 class="modal-title" id="otaCorrectionModalLabel">Add OTA Rates</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
             </div>
+            <div class="modal-body">
+                <!-- Provider Information -->
+                <div class="provider-info mb-3">
+                    <h6>Provider Information</h6>
+                    <div class="row">
+                        <div class="col-md-6">
+                            <p><strong>Provider:</strong> <span id="provider-name-ota"></span></p>
+                        </div>
+                        <div class="col-md-6">
+                            <p><strong>Network Status:</strong> <span id="provider-network-ota"></span></p>
+                        </div>
+                    </div>
+                    <div class="row">
+                        <div class="col-md-12">
+                            <p><strong>Order ID:</strong> <span id="order-id-ota"></span></p>
+                        </div>
+                    </div>
+                </div>
 
-            <!-- Tabs for correction methods -->
-            <ul class="nav nav-tabs" id="correctionTabs" role="tablist">
-              <li class="nav-item" role="presentation">
-                <button class="nav-link active" id="line-item-tab" data-bs-toggle="tab" data-bs-target="#line-item-correction" type="button" role="tab">Line Item Correction</button>
-              </li>
-              <li class="nav-item" role="presentation">
-                <button class="nav-link" id="category-tab" data-bs-toggle="tab" data-bs-target="#category-correction" type="button" role="tab">Category Correction</button>
-              </li>
-            </ul>
+                <div class="alert alert-info">
+                    Enter OTA (One Time Agreement) rates for this out-of-network provider.
+                </div>
 
-            <!-- Tab content -->
-            <div class="tab-content mt-3" id="correctionTabContent">
-              <!-- Line Item Correction -->
-              <div class="tab-pane fade show active" id="line-item-correction" role="tabpanel">
-                <div class="alert alert-info">Enter rates for individual CPT codes</div>
                 <div class="table-responsive">
-                  <table class="table table-striped" id="line-items-table">
-                    <thead>
-                      <tr>
-                        <th>CPT Code</th>
-                        <th>Description</th>
-                        <th>Current Rate</th>
-                        <th>New Rate</th>
-                        <th>Procedure Category</th>
-                      </tr>
-                    </thead>
-                    <tbody id="line-items-body">
-                      <!-- Will be populated dynamically -->
-                    </tbody>
-                  </table>
+                    <table class="table table-striped" id="ota-items-table">
+                        <thead>
+                            <tr>
+                                <th>CPT Code</th>
+                                <th>Description</th>
+                                <th>Modifier</th>
+                                <th>Current Rate</th>
+                                <th>OTA Rate</th>
+                            </tr>
+                        </thead>
+                        <tbody id="ota-items-body">
+                            <!-- Will be populated dynamically -->
+                        </tbody>
+                    </table>
                 </div>
-              </div>
-
-              <!-- Category Correction -->
-              <div class="tab-pane fade" id="category-correction" role="tabpanel">
-                <div class="alert alert-info">Set rates by category to update multiple CPT codes at once</div>
-                <div class="table-responsive">
-                  <table class="table table-striped" id="category-table">
-                    <thead>
-                      <tr>
-                        <th>Category</th>
-                        <th>CPT Codes</th>
-                        <th>Rate</th>
-                      </tr>
-                    </thead>
-                    <tbody id="category-body">
-                      <!-- Will be populated dynamically -->
-                    </tbody>
-                  </table>
-                </div>
-              </div>
             </div>
-          </div>
-          <div class="modal-footer">
-            <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
-            <button type="button" class="btn btn-primary" id="save-rate-corrections">Save Corrections</button>
-          </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                <button type="button" class="btn btn-primary" id="save-ota-corrections">Save OTA Rates</button>
+            </div>
         </div>
-      </div>
     </div>
+</div>
+{% endblock %}
 
-    <!-- OTA Correction Modal -->
-    <div class="modal fade" id="otaCorrectionModal" tabindex="-1" aria-labelledby="otaCorrectionModalLabel" aria-hidden="true">
-      <div class="modal-dialog modal-lg">
-        <div class="modal-content">
-          <div class="modal-header">
-            <h5 class="modal-title" id="otaCorrectionModalLabel">Add OTA Rates</h5>
-            <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
-          </div>
-          <div class="modal-body">
-            <!-- Provider Information -->
-            <div class="provider-info mb-3">
-              <h6>Provider Information</h6>
-              <div class="row">
-                <div class="col-md-6">
-                  <p><strong>Provider:</strong> <span id="provider-name-ota"></span></p>
-                </div>
-                <div class="col-md-6">
-                  <p><strong>Network Status:</strong> <span id="provider-network-ota"></span></p>
-                </div>
-              </div>
-              <div class="row">
-                <div class="col-md-12">
-                  <p><strong>Order ID:</strong> <span id="order-id-ota"></span></p>
-                </div>
-              </div>
-            </div>
-
-            <div class="alert alert-info">
-              Enter OTA (One Time Agreement) rates for this out-of-network provider.
-            </div>
-
-            <div class="table-responsive">
-              <table class="table table-striped" id="ota-items-table">
-                <thead>
-                  <tr>
-                    <th>CPT Code</th>
-                    <th>Description</th>
-                    <th>Modifier</th>
-                    <th>Current Rate</th>
-                    <th>OTA Rate</th>
-                  </tr>
-                </thead>
-                <tbody id="ota-items-body">
-                  <!-- Will be populated dynamically -->
-                </tbody>
-              </table>
-            </div>
-          </div>
-          <div class="modal-footer">
-            <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
-            <button type="button" class="btn btn-primary" id="save-ota-corrections">Save OTA Rates</button>
-          </div>
-        </div>
-      </div>
-    </div>
-
-    <!-- Scripts -->
-    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/js/bootstrap.bundle.min.js"></script>
-    <script src="{{ url_for('static', filename='js/theme.js') }}"></script>
-    <script src="{{ url_for('static', filename='js/main.js') }}"></script>
-    <script src="{{ url_for('static', filename='js/rate_correction.js') }}"></script>
-    <script src="{{ url_for('static', filename='js/ota_correction.js') }}"></script>
-</body>
-</html> 
+{% block extra_scripts %}
+<script src="{{ url_for('static', filename='js/theme.js') }}"></script>
+<script src="{{ url_for('static', filename='js/rate_correction.js') }}"></script>
+<script src="{{ url_for('static', filename='js/ota_correction.js') }}"></script>
+{% endblock %} 

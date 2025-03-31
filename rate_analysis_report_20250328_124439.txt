@@ -1,0 +1,27 @@
+================================================================================
+RATE ANALYSIS REPORT
+Generated on: 2025-03-28 12:44:39
+================================================================================
+
+SUMMARY STATISTICS:
+Total files analyzed: 0
+Files with rate information: 0
+Total service lines: 0
+Lines with rate information: 0
+
+Average charged amount: $0.00
+Average assigned rate: $0.00
+Average discount percentage: 0.00%
+Maximum discount: 0.00%
+Minimum discount: 100.00%
+
+THRESHOLD ANALYSIS:
+Cases where rate exceeds 70.0% of charge: 0 (0.00% of lines)
+Cases where rate exceeds 75.0% of charge: 0 (0.00% of lines)
+Cases where rate exceeds 80.0% of charge: 0 (0.00% of lines)
+
+TOP CPT CODES:
+
+TOP MODIFIERS:
+
+PROVIDER STATE DISTRIBUTION:
