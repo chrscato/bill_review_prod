@@ -72,6 +72,11 @@ class ValidationReporter:
         total_validations = len(self.detailed_results)
         success_rate = status_counts.get('PASS', 0) / total_validations if total_validations > 0 else 0
         
+        # Count component billing failures
+        component_billing_failures = len([r for r in self.detailed_results if 
+                                      r.get('status') == 'FAIL' and 
+                                      r.get('details', {}).get('component_billing', {}).get('is_component_billing', False)])
+        
         # Generate summary
         self.summary = {
             "timestamp": self.timestamp,
@@ -86,7 +91,11 @@ class ValidationReporter:
                 "total_failures": len(failures),
                 "failure_types": dict(failure_types)
             },
-            "success_rate": success_rate * 100
+            "success_rate": success_rate * 100,
+            "total_files": total_validations,
+            "passed_files": status_counts.get('PASS', 0),
+            "failed_files": status_counts.get('FAIL', 0),
+            "component_billing_failures": component_billing_failures
         }
         
         return self.summary
@@ -197,9 +206,21 @@ class ValidationReporter:
         for result in [r for r in self.detailed_results if r.get('status') == 'FAIL']:
             messages = result.get('messages', [])
             message = messages[0] if messages else "No message"
+            
+            # Check if this is a component billing failure
+            is_component_failure = False
+            component_type = ""
+            if 'details' in result and 'component_billing' in result['details']:
+                component_info = result['details']['component_billing']
+                if component_info.get('is_component_billing'):
+                    is_component_failure = True
+                    component_type = component_info.get('component_type', 'unknown')
+            
+            failure_type = "Component Billing" if is_component_failure else result.get('validation_type', 'unknown')
+            
             failure_rows += f"""
             <tr>
-                <td>{result.get('validation_type', 'unknown')}</td>
+                <td>{failure_type}</td>
                 <td>{result.get('file_name', 'unknown')}</td>
                 <td>{result.get('order_id', 'unknown')}</td>
                 <td class="error-message">{message}</td>

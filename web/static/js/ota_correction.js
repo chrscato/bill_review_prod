@@ -205,8 +205,18 @@ const OTACorrectionModule = (function() {
         // Try to get rates from different possible locations
         let rates = [];
         
-        // Check service lines first (this is where the rate data is)
-        if (failure.service_lines && Array.isArray(failure.service_lines)) {
+        // Check line items in the main data structure
+        if (failure.line_items && Array.isArray(failure.line_items)) {
+            console.log('Found line items:', failure.line_items);
+            rates = failure.line_items.map(item => ({
+                cpt: item.cpt_code,
+                description: item.description || item.proc_desc || '',
+                rate: parseFloat(item.charge_amount) || 0,
+                modifier: Array.isArray(item.modifiers) ? item.modifiers.join(', ') : (item.modifiers || '')
+            }));
+        }
+        // Fallback to service lines if line_items not found
+        else if (failure.service_lines && Array.isArray(failure.service_lines)) {
             console.log('Found service lines:', failure.service_lines);
             rates = failure.service_lines.map(item => ({
                 cpt: item.cpt_code,

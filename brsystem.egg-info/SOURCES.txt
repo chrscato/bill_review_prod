@@ -18,7 +18,10 @@ core/models/procedures.py
 core/models/validation.py
 core/services/__init__.py
 core/services/database.py
+core/services/hcfa.py
 core/services/normalizer.py
+core/services/ota_service.py
+core/services/rate_service.py
 core/services/reporter.py
 core/validators/__init__.py
 core/validators/bundle_validator.py

@@ -182,6 +182,24 @@ class BillReviewApplication:
                 if bundle_result.get('status') == 'FAIL':
                     critical_failures.append(("bundle", bundle_result.get('message', 'Bundle validation failed')))
                 
+                # Check for component billing in modifier validator
+                if validation_results.get('modifier', {}).get('component_billing', {}).get('is_component_billing'):
+                    has_component_billing = True
+                    component_info = validation_results['modifier']['component_billing']
+                    component_type = component_info['component_type']
+                    component_message = component_info['message']
+                    # Add to critical failures
+                    critical_failures.append(("component_billing", f"Non-global bill detected: {component_message}"))
+                
+                # Also check line items validator for component billing
+                elif validation_results.get('line_items', {}).get('details', {}).get('component_billing', {}).get('is_component_billing'):
+                    has_component_billing = True
+                    component_info = validation_results['line_items']['details']['component_billing']
+                    component_type = component_info['component_type']
+                    component_message = component_info['message']
+                    # Add to critical failures
+                    critical_failures.append(("component_billing", f"Non-global bill detected: {component_message}"))
+                
                 # Intent failure is critical if not a bundle
                 if intent_result.get('status') == 'FAIL' and not has_bundle_pass:
                     critical_failures.append(("intent", intent_result.get('message', 'Clinical intent validation failed')))
@@ -328,6 +346,14 @@ class BillReviewApplication:
                     # Add validation messages to the file
                     file_data['validation_messages'] = overall_messages
                     
+                    # Check if this was a component billing failure
+                    if has_component_billing:
+                        file_data['component_billing'] = {
+                            'is_component_billing': True,
+                            'component_type': component_type,
+                            'failure_reason': True  # Explicitly mark as a failure reason
+                        }
+                    
                     # Write the modified file to the fails directory
                     with open(target_path, 'w', encoding='utf-8') as f:
                         json.dump(file_data, f, indent=2)
@@ -341,22 +367,83 @@ class BillReviewApplication:
                     file_data['validation_status'] = "PASS"
                     file_data['validation_messages'] = overall_messages
                     
-                    # Add rate information if available
+                    # Add total rate at the top level
                     rate_validation = validation_results.get('rate', {})
-                    if rate_validation and 'results' in rate_validation:
-                        # Extract rate details
-                        rate_details = []
-                        for line in rate_validation['results']:
-                            if line.get('status') == 'PASS':
-                                rate_details.append({
-                                    'cpt': line.get('cpt'),
-                                    'assigned_rate': line.get('validated_rate'),
-                                    'rate_source': line.get('rate_source'),
-                                    'is_bundled': line.get('is_bundled', False),
-                                    'bundle_name': line.get('bundle_name', None)
-                                })
-                        file_data['assigned_rates'] = rate_details
+                    if rate_validation:
                         file_data['total_assigned_rate'] = rate_validation.get('total_rate', 0)
+                    
+                    # Match service lines with database line items and add payment_id and rate info
+                    if 'service_lines' in file_data and isinstance(file_data['service_lines'], list):
+                        try:
+                            # Create a mapping of CPT codes to rate results
+                            rate_map = {}
+                            if rate_validation and 'results' in rate_validation:
+                                for rate_result in rate_validation['results']:
+                                    if rate_result.get('status') == 'PASS':
+                                        cpt = rate_result.get('cpt')
+                                        if cpt:
+                                            # Simple mapping by CPT code is sufficient for rates
+                                            if cpt not in rate_map:
+                                                rate_map[cpt] = rate_result
+
+                            # Prepare database line items for matching
+                            # Convert DataFrame to a list of dictionaries for easier manipulation
+                            db_line_items = []
+                            for _, row in order_lines.iterrows():
+                                cpt = str(row.get('CPT', ''))
+                                if cpt:
+                                    db_line_items.append({
+                                        'id': row.get('id'),
+                                        'order_id': row.get('Order_ID'),
+                                        'cpt': cpt,
+                                        'modifier': row.get('Modifier', ''),
+                                        'units': row.get('Units', 1),
+                                        'matched': False  # Flag to track if this item has been matched
+                                    })
+
+                            # Track HCFA service lines that have been matched
+                            for service_line in file_data['service_lines']:
+                                cpt = service_line.get('cpt_code')
+                                if not cpt:
+                                    continue
+                                    
+                                # Get rate info for this CPT code
+                                rate_info = rate_map.get(cpt)
+                                
+                                # Add rate info directly to the service line if available
+                                if rate_info:
+                                    service_line['assigned_rate'] = rate_info.get('validated_rate')
+                                    service_line['rate_source'] = rate_info.get('rate_source')
+                                    service_line['is_bundled'] = rate_info.get('is_bundled', False)
+                                    
+                                    if rate_info.get('bundle_name'):
+                                        service_line['bundle_name'] = rate_info.get('bundle_name')
+                                
+                                # Find a matching database line item
+                                match_found = False
+                                
+                                # First, look for an exact match by CPT code that hasn't been matched yet
+                                for db_item in db_line_items:
+                                    if db_item['cpt'] == cpt and not db_item['matched']:
+                                        # We found a match - add payment_id and mark as matched
+                                        service_line['payment_id'] = {
+                                            'line_item_id': db_item['id'],
+                                            'order_id': db_item['order_id']
+                                        }
+                                        db_item['matched'] = True
+                                        match_found = True
+                                        break
+                                
+                                # If no match found, this is either an ancillary code or all matching
+                                # database line items have already been assigned
+                                if not match_found:
+                                    # No payment_id is added in this case
+                                    pass
+
+                        except Exception as e:
+                            # Log the error but continue processing
+                            logger.error(f"Error matching service lines to line items: {str(e)}")
+                            file_data['validation_messages'].append(f"Warning: Error matching service lines to database IDs: {str(e)}")
                     
                     # Add order details from database
                     if order_details:
@@ -379,7 +466,9 @@ class BillReviewApplication:
                                 'City': provider_info.get('Billing Address City'),
                                 'State': provider_info.get('Billing Address State'),
                                 'Postal_Code': provider_info.get('Billing Address Postal Code')
-                            }
+                            },
+                            'TIN': provider_info.get('TIN'),
+                            'NPI': provider_info.get('NPI')
                         }
                         file_data['provider_details'] = clean_provider_info
                     
