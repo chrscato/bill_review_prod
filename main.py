@@ -6,6 +6,9 @@ from datetime import datetime
 from typing import Dict, List, Any, Optional
 import pandas as pd
 import shutil
+import traceback
+import argparse
+import random
 
 # Config
 from config.settings import settings
@@ -529,6 +532,180 @@ class BillReviewApplication:
             with open(target_path, 'w', encoding='utf-8') as f:
                 json.dump(file_data, f, indent=2)
 
+    def debug_process_file(self, file_path: Path, validators: Dict) -> Dict:
+        """
+        Process a file with enhanced error logging and return diagnostic information.
+        
+        Args:
+            file_path: Path to the file to process
+            validators: Dictionary of validators to use
+            
+        Returns:
+            Dict: Debug information about the processing
+        """
+        debug_info = {
+            "file_path": str(file_path),
+            "file_name": file_path.name,
+            "file_size": file_path.stat().st_size,
+            "processing_steps": [],
+            "success": False,
+            "error_type": None,
+            "error_message": None,
+            "error_details": None,
+            "data_sample": None,
+            "validation_results": {}
+        }
+        
+        try:
+            # Step 1: Read and parse JSON
+            debug_info["processing_steps"].append("Reading JSON file")
+            with open(file_path, 'r') as f:
+                raw_data = json.load(f)
+                debug_info["data_sample"] = {
+                    "line_items_count": len(raw_data.get("line_items", [])),
+                    "service_lines_count": len(raw_data.get("service_lines", [])),
+                    "has_bundle_info": bool(raw_data.get("bundle_type")),
+                    "has_order_id": bool(raw_data.get("Order_ID") or raw_data.get("order_id") or raw_data.get("filemaker_record_number")),
+                    "has_patient_info": bool(raw_data.get("patient_info")),
+                    "has_billing_info": bool(raw_data.get("billing_info")),
+                    "first_cpt_code": (
+                        raw_data.get("line_items", [{}])[0].get("cpt") if raw_data.get("line_items") else
+                        raw_data.get("service_lines", [{}])[0].get("cpt_code") if raw_data.get("service_lines") else
+                        "None"
+                    ),
+                    "sample_line_item": raw_data.get("line_items", [{}])[0] if raw_data.get("line_items") else None,
+                    "sample_service_line": raw_data.get("service_lines", [{}])[0] if raw_data.get("service_lines") else None,
+                    "data_structure": {
+                        "top_level_keys": list(raw_data.keys()),
+                        "service_line_keys": list(raw_data.get("service_lines", [{}])[0].keys()) if raw_data.get("service_lines") else [],
+                        "patient_info_keys": list(raw_data.get("patient_info", {}).keys()),
+                        "billing_info_keys": list(raw_data.get("billing_info", {}).keys())
+                    }
+                }
+            
+            # Step 2: Normalize HCFA data
+            debug_info["processing_steps"].append("Normalizing HCFA data")
+            try:
+                normalized_data = normalize_hcfa_format(raw_data)
+                debug_info["processing_steps"].append("HCFA data normalized successfully")
+                debug_info["data_sample"]["normalized_line_items_count"] = len(normalized_data.get("line_items", []))
+                debug_info["data_sample"]["normalized_sample"] = normalized_data.get("line_items", [{}])[0] if normalized_data.get("line_items") else None
+            except Exception as e:
+                debug_info["error_type"] = "NormalizationError"
+                debug_info["error_message"] = str(e)
+                debug_info["error_details"] = {
+                    "error": str(e),
+                    "error_type": type(e).__name__,
+                    "traceback": traceback.format_exc()
+                }
+                return debug_info
+            
+            # Step 3: Database connection
+            debug_info["processing_steps"].append("Connecting to database")
+            try:
+                with self.db_service.connect_db() as conn:
+                    debug_info["processing_steps"].append("Database connection successful")
+                    
+                    # Get order ID from normalized data
+                    order_id = normalized_data.get("Order_ID")
+                    if not order_id:
+                        debug_info["error_type"] = "ValidationError"
+                        debug_info["error_message"] = "No Order_ID found in file"
+                        return debug_info
+                    
+                    # Get provider info and order details
+                    provider_info = self.db_service.get_provider_details(order_id, conn)
+                    order_details = self.db_service.get_full_details(order_id, conn)
+                    order_lines = self.db_service.get_line_items(order_id, conn)
+                    
+                    # Convert order line items to dict format for validators
+                    order_data = {
+                        "line_items": []
+                    }
+                    
+                    for _, row in order_lines.iterrows():
+                        order_data["line_items"].append({
+                            "CPT": row["CPT"],
+                            "Modifier": row["Modifier"],
+                            "Units": row["Units"],
+                            "Description": row["Description"]
+                        })
+                    
+                    # Step 4: Run validators
+                    debug_info["processing_steps"].append("Running validators")
+                    validation_errors = []
+                    
+                    for validator_name, validator in validators.items():
+                        try:
+                            # Pass appropriate data to each validator
+                            if validator_name == 'bundle':
+                                result = validator.validate(order_data, normalized_data)
+                            elif validator_name == 'intent':
+                                result = validator.validate(order_data, normalized_data)
+                            elif validator_name == 'line_items':
+                                result = validator.validate(normalized_data.get('line_items', []), order_lines)
+                            elif validator_name == 'rate':
+                                result = validator.validate(normalized_data.get('line_items', []), order_id)
+                            else:
+                                result = validator.validate(normalized_data)
+                            
+                            debug_info["validation_results"][validator_name] = {
+                                "status": result.get("status", "UNKNOWN"),
+                                "messages": result.get("messages", []),
+                                "details": result.get("details", {})
+                            }
+                            
+                            if result.get("status") == "FAIL":
+                                validation_errors.append({
+                                    "validator": validator_name,
+                                    "messages": result.get("messages", []),
+                                    "details": result.get("details", {})
+                                })
+                        except Exception as e:
+                            debug_info["validation_results"][validator_name] = {
+                                "status": "ERROR",
+                                "error": str(e),
+                                "error_type": type(e).__name__,
+                                "traceback": traceback.format_exc()
+                            }
+                            validation_errors.append({
+                                "validator": validator_name,
+                                "error": str(e),
+                                "error_type": type(e).__name__
+                            })
+                    
+                    if validation_errors:
+                        debug_info["error_type"] = "ValidationError"
+                        debug_info["error_message"] = f"Found {len(validation_errors)} validation errors"
+                        debug_info["error_details"] = {
+                            "validation_errors": validation_errors
+                        }
+                    else:
+                        debug_info["success"] = True
+                        debug_info["processing_steps"].append("All validations passed")
+                
+            except Exception as e:
+                debug_info["error_type"] = "DatabaseError"
+                debug_info["error_message"] = str(e)
+                debug_info["error_details"] = {
+                    "error": str(e),
+                    "error_type": type(e).__name__,
+                    "traceback": traceback.format_exc()
+                }
+                return debug_info
+            
+            return debug_info
+            
+        except Exception as e:
+            debug_info["error_type"] = "ProcessingError"
+            debug_info["error_message"] = str(e)
+            debug_info["error_details"] = {
+                "error": str(e),
+                "error_type": type(e).__name__,
+                "traceback": traceback.format_exc()
+            }
+            return debug_info
+
     def run(self):
         """
         Main execution method to process all JSON files.
@@ -589,9 +766,184 @@ class BillReviewApplication:
         print(f"Pass: {sum(1 for r in self.validation_results if r.status == 'PASS')}")
         print(f"Fail: {sum(1 for r in self.validation_results if r.status == 'FAIL')}")
 
+    def run_debug(self, sample_size: int = 5) -> None:
+        """
+        Run the application in debug mode on a small sample of files.
+        
+        Args:
+            sample_size: Number of files to process in debug mode
+        """
+        print(f"\nStarting debug mode with sample size: {sample_size}")
+        
+        # Create debug directory
+        debug_dir = settings.LOG_PATH / "debug"
+        debug_dir.mkdir(parents=True, exist_ok=True)
+        
+        # Get list of JSON files
+        json_files = list(settings.JSON_PATH.glob("*.json"))
+        if not json_files:
+            print("No JSON files found to process")
+            return
+        
+        # Take a sample of files
+        sample_files = random.sample(json_files, min(sample_size, len(json_files)))
+        
+        # Load reference data from database
+        print("\nLoading reference data...")
+        try:
+            with self.db_service.connect_db() as conn:
+                dim_proc_df = pd.read_sql_query("SELECT * FROM dim_proc", conn)
+                print(f"Loaded dim_proc_df with {len(dim_proc_df)} rows")
+                print(f"Columns: {list(dim_proc_df.columns)}")
+                if not dim_proc_df.empty:
+                    print(f"Sample row: {dim_proc_df.iloc[0].to_dict()}")
+            
+                # Initialize validators with database connection
+                validators = {
+                    'bundle': BundleValidator(),
+                    'intent': ClinicalIntentValidator(),
+                    'modifier': ModifierValidator(),
+                    'units': UnitsValidator(dim_proc_df),
+                    'line_items': LineItemValidator(dim_proc_df),
+                    'rate': RateValidator(conn)  # Pass the database connection
+                }
+                
+                # Process each file
+                debug_results = []
+                for file_path in sample_files:
+                    print(f"\nProcessing file: {file_path.name}")
+                    try:
+                        debug_result = self.debug_process_file(file_path, validators)
+                        debug_results.append(debug_result)
+                        
+                        # Save individual debug info
+                        debug_file = debug_dir / f"{file_path.stem}_debug.json"
+                        with open(debug_file, 'w') as f:
+                            json.dump(debug_result, f, indent=2)
+                        
+                        # Print summary
+                        if debug_result["success"]:
+                            print(f"✓ Successfully processed {file_path.name}")
+                            print("  Processing steps:")
+                            for step in debug_result["processing_steps"]:
+                                print(f"    - {step}")
+                        else:
+                            print(f"✗ Failed to process {file_path.name}")
+                            print(f"  Error type: {debug_result['error_type']}")
+                            print(f"  Error message: {debug_result['error_message']}")
+                            
+                            if debug_result.get("error_details"):
+                                if "validation_errors" in debug_result["error_details"]:
+                                    print("\n  Validation errors:")
+                                    for error in debug_result["error_details"]["validation_errors"]:
+                                        print(f"    - {error['validator']}:")
+                                        for msg in error.get("messages", []):
+                                            print(f"      * {msg}")
+                                else:
+                                    print(f"  Error details: {debug_result['error_details']}")
+                            
+                            if debug_result.get("data_sample"):
+                                print("\n  Data sample:")
+                                sample = debug_result["data_sample"]
+                                print(f"    - Line items count: {sample.get('line_items_count', 'unknown')}")
+                                print(f"    - Has bundle info: {sample.get('has_bundle_info', False)}")
+                                print(f"    - Has Order ID: {sample.get('has_order_id', False)}")
+                        
+                    except Exception as e:
+                        print(f"✗ Error processing {file_path.name}: {str(e)}")
+                        debug_results.append({
+                            "file_path": str(file_path),
+                            "file_name": file_path.name,
+                            "success": False,
+                            "error_type": "ProcessingError",
+                            "error_message": str(e),
+                            "error_details": {
+                                "error": str(e),
+                                "error_type": type(e).__name__,
+                                "traceback": traceback.format_exc()
+                            }
+                        })
+                
+                # Analyze results
+                self._analyze_debug_results(debug_results)
+                
+                # Print summary
+                success_count = sum(1 for r in debug_results if r["success"])
+                print(f"\nDebug Summary:")
+                print(f"Total files processed: {len(debug_results)}")
+                print(f"Successful: {success_count}")
+                print(f"Failed: {len(debug_results) - success_count}")
+                
+                # Print error types
+                error_types = {}
+                for result in debug_results:
+                    if not result["success"]:
+                        error_type = result["error_type"]
+                        error_types[error_type] = error_types.get(error_type, 0) + 1
+                
+                if error_types:
+                    print("\nError types:")
+                    for error_type, count in error_types.items():
+                        print(f"  - {error_type}: {count} files")
+                    
+        except Exception as e:
+            print(f"Error loading reference data: {str(e)}")
+            return
+
+    def _analyze_debug_results(self, debug_results):
+        """
+        Analyze debug results to identify patterns in failures.
+        
+        Args:
+            debug_results: List of debug result dictionaries
+        """
+        from collections import Counter
+        
+        error_types = Counter([r["error_type"] for r in debug_results if not r["success"]])
+        failing_steps = Counter([r["processing_steps"][-1] for r in debug_results if not r["success"] and r["processing_steps"]])
+        
+        # Save analysis
+        analysis = {
+            "total_files": len(debug_results),
+            "success_count": sum(1 for r in debug_results if r["success"]),
+            "failure_count": sum(1 for r in debug_results if not r["success"]),
+            "error_types": dict(error_types),
+            "failing_steps": dict(failing_steps),
+            "common_patterns": {
+                "missing_order_id": sum(1 for r in debug_results if not r.get("order_id")),
+                "normalization_failures": sum(1 for r in debug_results if r.get("normalization_success") is False),
+                "db_connection_failures": sum(1 for r in debug_results if r.get("db_connection_success") is False)
+            }
+        }
+        
+        # Save analysis to file
+        analysis_file = settings.LOG_PATH / "debug" / "debug_analysis.json"
+        with open(analysis_file, 'w', encoding='utf-8') as f:
+            json.dump(analysis, f, indent=2)
+        
+        print("\nDebug Analysis:")
+        print(f"Total files: {analysis['total_files']}")
+        print(f"Successful: {analysis['success_count']}")
+        print(f"Failed: {analysis['failure_count']}")
+        print("\nError types:")
+        for error_type, count in error_types.most_common():
+            print(f"  {error_type}: {count}")
+        print("\nFailing steps:")
+        for step, count in failing_steps.most_common():
+            print(f"  {step}: {count}")
+
 if __name__ == "__main__":
+    parser = argparse.ArgumentParser(description="Healthcare Bill Review System 2.0")
+    parser.add_argument("--debug", action="store_true", help="Run in debug mode")
+    parser.add_argument("--sample", type=int, default=5, help="Number of files to debug")
+    args = parser.parse_args()
+    
     print("Healthcare Bill Review System 2.0")
     print("=================================")
     
     app = BillReviewApplication()
-    app.run()
+    
+    if args.debug:
+        app.run_debug(sample_size=args.sample)
+    else:
+        app.run()

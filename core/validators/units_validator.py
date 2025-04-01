@@ -196,105 +196,148 @@ class UnitsValidator:
         Returns:
             Dict: Validation results
         """
-        if not hcfa_data or "line_items" not in hcfa_data:
+        try:
+            if not hcfa_data or "line_items" not in hcfa_data:
+                return {
+                    "status": "FAIL",
+                    "reason": "No line items to validate",
+                    "details": {
+                        "total_checked": 0,
+                        "total_invalid": 0
+                    },
+                    "messages": ["No line items to validate"]
+                }
+            
+            line_items = hcfa_data.get('line_items', [])
+            
+            # Make sure line_items is a list to avoid TypeErrors
+            if not isinstance(line_items, list):
+                return {
+                    "status": "FAIL",
+                    "reason": "Line items is not a list",
+                    "details": {
+                        "total_checked": 0,
+                        "total_invalid": 0,
+                        "line_items_type": type(line_items).__name__
+                    },
+                    "messages": [f"Line items is not a list, found {type(line_items).__name__}"]
+                }
+            
+            # First check if any line has bundle information
+            bundle_type = None
+            bundle_name = None
+            
+            for line in line_items:
+                if line.get("bundle_type") and line.get("bundle_name"):
+                    bundle_type = line.get("bundle_type")
+                    bundle_name = line.get("bundle_name")
+                    break
+            
+            # If no bundle information found in lines, detect it
+            bundle_info = None
+            if not bundle_type:
+                bundle_info = self.detect_bundle(line_items)
+                if bundle_info["found"]:
+                    bundle_type = bundle_info["type"]
+                    bundle_name = bundle_info["name"]
+            
+            # Validate units for each line
+            invalid_units = []
+            
+            for line in line_items:
+                try:
+                    cpt = clean_cpt_code(line.get('cpt', ''))
+                    if not cpt:
+                        continue
+                        
+                    units = safe_int(line.get('units', 1))
+                    
+                    # Skip validation if units is 1 (always valid)
+                    if units <= 1:
+                        continue
+                        
+                    # Get maximum allowed units
+                    max_units = self.get_max_units(cpt, bundle_type)
+                    
+                    # Check if units exceed maximum
+                    if units > max_units:
+                        is_ancillary = self.is_ancillary(cpt)
+                        proc_category = self.get_proc_category(cpt)
+                        
+                        invalid_units.append({
+                            "cpt": cpt,
+                            "units": units,
+                            "max_allowed": max_units,
+                            "is_ancillary": is_ancillary,
+                            "proc_category": proc_category or "unknown",
+                            "bundle_type": bundle_type,
+                            "reason": f"Units ({units}) exceed maximum allowed ({max_units})"
+                        })
+                except Exception as line_error:
+                    # Log the error but continue processing other lines
+                    invalid_units.append({
+                        "cpt": line.get('cpt', 'unknown'),
+                        "units": line.get('units', 'unknown'),
+                        "error": str(line_error),
+                        "error_type": type(line_error).__name__,
+                        "reason": f"Error validating line: {str(line_error)}"
+                    })
+            
+            # Generate appropriate messages based on bundle type and validation results
+            messages = []
+            
+            if bundle_type:
+                messages.append(f"Bundle detected: {bundle_name} ({bundle_type})")
+                
+                if not invalid_units:
+                    messages.append(f"All units are valid for {bundle_type} bundle")
+                else:
+                    messages.append(f"Found {len(invalid_units)} unit violation(s) in {bundle_type} bundle")
+            else:
+                if not invalid_units:
+                    messages.append("All units are valid")
+                else:
+                    messages.append(f"Found {len(invalid_units)} unit violation(s)")
+                    
+                    # Count non-ancillary violations
+                    non_ancillary = [unit for unit in invalid_units if not unit.get("is_ancillary")]
+                    if non_ancillary:
+                        messages.append(f"{len(non_ancillary)} non-ancillary CPT code(s) with multiple units")
+            
+            # Add details for first few violations
+            for i, unit in enumerate(invalid_units[:3], 1):
+                messages.append(f"  {i}. {unit.get('reason', 'Unknown error')} (CPT {unit.get('cpt', 'unknown')})")
+            
+            if len(invalid_units) > 3:
+                messages.append(f"  ... and {len(invalid_units) - 3} more violations")
+            
+            # Return validation result
+            return {
+                "status": "FAIL" if invalid_units else "PASS",
+                "details": {
+                    "all_unit_issues": invalid_units,
+                    "non_ancillary_violations": [unit for unit in invalid_units if not unit.get("is_ancillary")],
+                    "total_violations": len(invalid_units),
+                    "total_checked": len(line_items),
+                    "bundle_info": bundle_info or {"type": bundle_type, "name": bundle_name, "found": bool(bundle_type)}
+                },
+                "messages": messages
+            }
+            
+        except Exception as e:
+            # Catch any unexpected errors and return a valid response
+            import traceback
+            error_traceback = traceback.format_exc()
+            
             return {
                 "status": "FAIL",
-                "reason": "No line items to validate",
+                "reason": f"Error in units validation: {str(e)}",
                 "details": {
                     "total_checked": 0,
-                    "total_invalid": 0
-                }
+                    "total_invalid": 0,
+                    "error": str(e),
+                    "error_type": type(e).__name__,
+                    "traceback": error_traceback
+                },
+                "messages": [f"Error in units validation: {str(e)}"]
             }
-        
-        line_items = hcfa_data.get('line_items', [])
-        
-        # First check if any line has bundle information
-        bundle_type = None
-        bundle_name = None
-        
-        for line in line_items:
-            if line.get("bundle_type") and line.get("bundle_name"):
-                bundle_type = line.get("bundle_type")
-                bundle_name = line.get("bundle_name")
-                break
-        
-        # If no bundle information found in lines, detect it
-        bundle_info = None
-        if not bundle_type:
-            bundle_info = self.detect_bundle(line_items)
-            if bundle_info["found"]:
-                bundle_type = bundle_info["type"]
-                bundle_name = bundle_info["name"]
-        
-        # Validate units for each line
-        invalid_units = []
-        
-        for line in line_items:
-            cpt = clean_cpt_code(line.get('cpt', ''))
-            if not cpt:
-                continue
-                
-            units = safe_int(line.get('units', 1))
-            
-            # Skip validation if units is 1 (always valid)
-            if units <= 1:
-                continue
-                
-            # Get maximum allowed units
-            max_units = self.get_max_units(cpt, bundle_type)
-            
-            # Check if units exceed maximum
-            if units > max_units:
-                is_ancillary = self.is_ancillary(cpt)
-                proc_category = self.get_proc_category(cpt)
-                
-                invalid_units.append({
-                    "cpt": cpt,
-                    "units": units,
-                    "max_allowed": max_units,
-                    "is_ancillary": is_ancillary,
-                    "proc_category": proc_category or "unknown",
-                    "bundle_type": bundle_type,
-                    "reason": f"Units ({units}) exceed maximum allowed ({max_units})"
-                })
-        
-        # Generate appropriate messages based on bundle type and validation results
-        messages = []
-        
-        if bundle_type:
-            messages.append(f"Bundle detected: {bundle_name} ({bundle_type})")
-            
-            if not invalid_units:
-                messages.append(f"All units are valid for {bundle_type} bundle")
-            else:
-                messages.append(f"Found {len(invalid_units)} unit violation(s) in {bundle_type} bundle")
-        else:
-            if not invalid_units:
-                messages.append("All units are valid")
-            else:
-                messages.append(f"Found {len(invalid_units)} unit violation(s)")
-                
-                # Count non-ancillary violations
-                non_ancillary = [unit for unit in invalid_units if not unit.get("is_ancillary")]
-                if non_ancillary:
-                    messages.append(f"{len(non_ancillary)} non-ancillary CPT code(s) with multiple units")
-        
-        # Add details for first few violations
-        for i, unit in enumerate(invalid_units[:3], 1):
-            messages.append(f"  {i}. {unit['reason']} (CPT {unit['cpt']})")
-            
-        if len(invalid_units) > 3:
-            messages.append(f"  ... and {len(invalid_units) - 3} more violations")
-        
-        # Return validation result
-        return {
-            "status": "FAIL" if invalid_units else "PASS",
-            "details": {
-                "all_unit_issues": invalid_units,
-                "non_ancillary_violations": [unit for unit in invalid_units if not unit.get("is_ancillary")],
-                "total_violations": len(invalid_units),
-                "total_checked": len(line_items),
-                "bundle_info": bundle_info or {"type": bundle_type, "name": bundle_name, "found": bool(bundle_type)}
-            },
-            "messages": messages
-        }

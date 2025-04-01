@@ -11,22 +11,85 @@ def normalize_hcfa_format(data: dict) -> dict:
     Handles both new format with service_lines and legacy format with line_items.
     
     Args:
-        data: Dictionary containing HCFA data
+        data: Dictionary containing HCFA data in various formats
         
     Returns:
-        dict: Normalized HCFA data
+        dict: Normalized HCFA data in standard format
     """
-    # Check if the data is already in the expected format
-    if "line_items" in data and isinstance(data["line_items"], list):
-        # Data already has line_items, just ensure all fields are present
-        return _ensure_standard_fields(data)
+    # Basic validation
+    if not isinstance(data, dict):
+        raise TypeError(f"Input data must be a dictionary, got {type(data)}")
     
-    # Check if this is the new format with service_lines
+    # Get order ID from various possible field names
+    order_id = (
+        data.get("Order_ID") or 
+        data.get("order_id") or 
+        data.get("OrderID") or 
+        data.get("orderid") or
+        data.get("filemaker_record_number")  # Fallback to filemaker number if no order ID
+    )
+    
+    normalized = {
+        "patient_name": data.get("patient_info", {}).get("patient_name", "Unknown"),
+        "date_of_service": data.get("date_of_service") or (
+            data.get("service_lines", [{}])[0].get("date_of_service") if data.get("service_lines") else None
+        ),
+        "Order_ID": order_id,  # Use the found order ID
+        "line_items": []
+    }
+    
+    # Look for billing info
+    if "billing_info" in data and isinstance(data["billing_info"], dict):
+        normalized["billing_provider_tin"] = data["billing_info"].get("billing_provider_tin")
+        normalized["billing_provider_name"] = data["billing_info"].get("billing_provider_name")
+    
+    # Convert service_lines to line_items format
     if "service_lines" in data and isinstance(data["service_lines"], list):
-        return _convert_service_lines_format(data)
+        for line in data["service_lines"]:
+            # Convert each service line to the expected line_items format
+            line_item = {
+                "cpt": line.get("cpt_code", ""),
+                "modifier": ','.join(line.get("modifiers", [])) if isinstance(line.get("modifiers"), list) else 
+                           line.get("modifier", ""),
+                "units": int(line.get("units", 1)),
+                "charge": float(line.get("charge_amount", 0)),
+                "date_of_service": line.get("date_of_service"),
+                "place_of_service": line.get("place_of_service"),
+                "diagnosis_pointer": line.get("diagnosis_pointer")
+            }
+            normalized["line_items"].append(line_item)
     
-    # If none of the above, try to infer the format
-    return _infer_and_normalize_format(data)
+    # If no service_lines, check for existing line_items format
+    elif "line_items" in data and isinstance(data["line_items"], list):
+        normalized["line_items"] = data["line_items"]
+    
+    # Ensure all line items have standard fields
+    for line in normalized["line_items"]:
+        # Ensure all line items have standard fields
+        if "cpt" not in line:
+            line["cpt"] = line.get("CPT", "")
+        
+        if "modifier" not in line:
+            line["modifier"] = line.get("Modifier", "")
+        
+        if "units" not in line:
+            line["units"] = line.get("Units", 1)
+        
+        if "charge" not in line:
+            line["charge"] = line.get("Charge", "0.00")
+            
+        # Normalize modifiers to consistent format
+        if isinstance(line["modifier"], list):
+            line["modifier"] = ",".join(str(m) for m in line["modifier"])
+        elif line["modifier"] is None:
+            line["modifier"] = ""
+    
+    # Preserve any other important fields from the original data
+    for key in ["raw_data", "validation_messages"]:
+        if key in data:
+            normalized[key] = data[key]
+    
+    return normalized
 
 def _ensure_standard_fields(data: dict) -> dict:
     """

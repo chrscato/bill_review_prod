@@ -313,7 +313,10 @@ class ModifierValidator:
         if invalid_modifiers:
             messages.append(f"Found {len(invalid_modifiers)} invalid modifier(s)")
             for i, item in enumerate(invalid_modifiers[:3], 1):  # Show first 3 only
-                messages.append(f"  {i}. {item['reason']} (CPT {item['cpt']}, Modifier {item['modifier']})")
+                modifiers_str = ', '.join(item.get('modifiers', []))
+                cpt = item.get('cpt', 'unknown')
+                reason = item.get('reason', f"Invalid modifier(s): {modifiers_str}")
+                messages.append(f"  {i}. {reason} (CPT {cpt})")
                 
             if len(invalid_modifiers) > 3:
                 messages.append(f"  ... and {len(invalid_modifiers) - 3} more invalid modifiers")
@@ -321,8 +324,9 @@ class ModifierValidator:
         if incompatible_sets:
             messages.append(f"Found {len(incompatible_sets)} incompatible modifier combination(s)")
             for i, item in enumerate(incompatible_sets[:3], 1):  # Show first 3 only
-                modifiers_str = ", ".join(item['modifiers'])
-                messages.append(f"  {i}. Incompatible modifiers: {modifiers_str} (CPT {item['cpt']})")
+                modifiers_str = ", ".join(item.get('modifiers', []))
+                cpt = item.get('cpt', 'unknown')
+                messages.append(f"  {i}. Incompatible modifiers: {modifiers_str} (CPT {cpt})")
                 
             if len(incompatible_sets) > 3:
                 messages.append(f"  ... and {len(incompatible_sets) - 3} more incompatible combinations")
@@ -330,7 +334,11 @@ class ModifierValidator:
         if missing_required:
             messages.append(f"Found {len(missing_required)} missing required modifier(s)")
             for i, item in enumerate(missing_required[:3], 1):  # Show first 3 only
-                messages.append(f"  {i}. {item['reason']} (CPT {item['cpt']})")
+                modifiers_str = ', '.join(item.get('modifiers', []))
+                cpt = item.get('cpt', 'unknown')
+                bundle = item.get('bundle_type', 'unknown')
+                reason = item.get('reason', f"Missing required modifier(s): {modifiers_str}")
+                messages.append(f"  {i}. {reason} (CPT {cpt}, Bundle: {bundle})")
                 
             if len(missing_required) > 3:
                 messages.append(f"  ... and {len(missing_required) - 3} more missing required modifiers")

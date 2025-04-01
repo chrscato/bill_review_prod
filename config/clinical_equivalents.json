@@ -89,6 +89,46 @@
       "name": "EMG Needle Complete",
       "codes": ["95886"],
       "description": "EMG needle studies, complete"
+    },
+    {
+      "name": "Arthrogram Upper Extremity",
+      "codes": ["23350", "73040", "73222", "77002"],
+      "description": "Arthrogram of upper extremity joint with imaging"
+    },
+    {
+      "name": "Arthrogram Lower Extremity",
+      "codes": ["27370", "73580", "73722", "77002"],
+      "description": "Arthrogram of lower extremity joint with imaging"
+    },
+    {
+      "name": "CT Head/Brain",
+      "codes": ["70450", "70460", "70470"],
+      "description": "CT of the head/brain with various contrast options"
+    },
+    {
+      "name": "CT Sinus",
+      "codes": ["70480", "70481", "70482"],
+      "description": "CT of the sinuses with various contrast options"
+    },
+    {
+      "name": "CT Neck",
+      "codes": ["70490", "70491", "70492"],
+      "description": "CT of the neck with various contrast options"
+    },
+    {
+      "name": "CT Spine Cervical",
+      "codes": ["72125", "72126", "72127"],
+      "description": "CT of the cervical spine with various contrast options"
+    },
+    {
+      "name": "CT Spine Thoracic",
+      "codes": ["72128", "72129", "72130"],
+      "description": "CT of the thoracic spine with various contrast options"
+    },
+    {
+      "name": "CT Spine Lumbar",
+      "codes": ["72131", "72132", "72133"],
+      "description": "CT of the lumbar spine with various contrast options"
     }
   ],
   "clinical_substitutes": [
@@ -115,6 +155,24 @@
       "primary_codes": ["70553", "72156", "72157", "72158", "73221", "73721"],
       "substitute_codes": ["S8042"],
       "description": "Open MRI may be substituted for standard MRI for claustrophobic patients"
+    },
+    {
+      "name": "MRI with vs without Contrast",
+      "primary_codes": ["70553", "72156", "72157", "72158", "73223", "73723"],
+      "substitute_codes": ["70551", "72141", "72146", "72148", "73221", "73721"],
+      "description": "MRI without contrast may be substituted when contrast is contraindicated"
+    },
+    {
+      "name": "CT with vs without Contrast",
+      "primary_codes": ["70470", "72127", "72130", "72133", "74176", "74177"],
+      "substitute_codes": ["70450", "72125", "72128", "72131", "74150", "74160"],
+      "description": "CT without contrast may be substituted when contrast is contraindicated"
+    },
+    {
+      "name": "Limited vs Complete Joint Injection",
+      "primary_codes": ["20610", "20611"],
+      "substitute_codes": ["20605", "20606"],
+      "description": "Medium joint injection may be substituted for large joint injection in certain cases"
     }
   ],
   "provider_specific_equivalents": {

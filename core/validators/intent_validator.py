@@ -105,11 +105,31 @@ class ClinicalIntentValidator:
         
         # Check from dim_proc if available
         if self.dim_proc_df is not None:
-            match = self.dim_proc_df[self.dim_proc_df['proc_cd'] == str(cpt_code)]
-            if not match.empty:
-                proc_category = match['proc_category'].iloc[0]
-                if proc_category:
-                    categories.append(proc_category.lower())
+            try:
+                # First try with proc_cd column
+                if 'proc_cd' in self.dim_proc_df.columns:
+                    match = self.dim_proc_df[self.dim_proc_df['proc_cd'] == str(cpt_code)]
+                    if not match.empty and 'proc_category' in self.dim_proc_df.columns:
+                        proc_category = match['proc_category'].iloc[0]
+                        if proc_category:
+                            categories.append(proc_category.lower())
+                # Also try with CPT column (might be capitalized differently)
+                elif 'CPT' in self.dim_proc_df.columns:
+                    match = self.dim_proc_df[self.dim_proc_df['CPT'] == str(cpt_code)]
+                    if not match.empty and 'proc_category' in self.dim_proc_df.columns:
+                        proc_category = match['proc_category'].iloc[0]
+                        if proc_category:
+                            categories.append(proc_category.lower())
+                # Try other common column names
+                elif 'cpt' in self.dim_proc_df.columns:
+                    match = self.dim_proc_df[self.dim_proc_df['cpt'] == str(cpt_code)]
+                    if not match.empty and 'proc_category' in self.dim_proc_df.columns:
+                        proc_category = match['proc_category'].iloc[0]
+                        if proc_category:
+                            categories.append(proc_category.lower())
+            except Exception as e:
+                # Log the error but continue with other categorization methods
+                print(f"Warning: Error looking up procedure category for CPT {cpt_code}: {str(e)}")
         
         # Check from predefined categories
         for category, codes in self.procedure_categories.items():
