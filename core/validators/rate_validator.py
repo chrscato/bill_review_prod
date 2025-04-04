@@ -123,15 +123,16 @@ class RateValidator:
                 break
         
         # BUNDLE RATE HANDLING
-        bundle_rate = self.get_bundle_rate(bundle_name, clean_provider_tin, provider_network)
-        
-        # Log bundle rate processing
+        bundle_rate = None
         if bundle_name and bundle_type:
+            bundle_rate = self.get_bundle_rate(bundle_name, clean_provider_tin, provider_network)
+            
+            # Log bundle rate processing
             self.logger.info(f"Processing bundled rate for {bundle_name} ({bundle_type})")
             if bundle_rate is None:
                 self.logger.info(f"No bundle rate found for {bundle_name}, using component rates")
         
-        if bundle_name and bundle_type:
+        if bundle_name and bundle_type and bundle_rate is not None:
             for line in hcfa_lines:
                 cpt = str(line.get('cpt', ''))
                 units = safe_int(line.get('units', 1))
@@ -254,6 +255,7 @@ class RateValidator:
         """
         cpt = str(line.get('cpt', ''))
         units = safe_int(line.get('units', 1))
+        modifier = line.get('modifier', '')  # Get modifier from line item
         
         # Default values if validation fails
         base_rate = None
@@ -279,7 +281,7 @@ class RateValidator:
             return result
 
         # Try PPO Rate first (for all providers)
-        ppo_rate = self._get_ppo_rate(provider_tin, cpt)
+        ppo_rate = self._get_ppo_rate(provider_tin, cpt, modifier)
         
         if ppo_rate is not None:
             base_rate = float(ppo_rate)
@@ -390,13 +392,53 @@ class RateValidator:
             return {}
         return df.iloc[0].to_dict()
     
-    def _get_ppo_rate(self, provider_tin: str, cpt_code: str) -> Optional[float]:
-        """Get PPO rate for a provider and CPT code."""
+    def _clean_rate_string(self, rate_str: str) -> float:
+        """
+        Clean a rate string by removing currency symbols, spaces, and commas.
+        
+        Args:
+            rate_str: Rate string to clean
+            
+        Returns:
+            float: Cleaned rate value
+        """
+        if not rate_str:
+            self.logger.warning("Empty rate string received")
+            return 0.0
+            
+        # Log the original rate string
+        self.logger.debug(f"Cleaning rate string: '{rate_str}'")
+        
+        try:
+            # First try direct float conversion
+            return float(rate_str)
+        except (ValueError, TypeError):
+            # If that fails, try cleaning the string
+            # Remove currency symbols, spaces, and commas
+            cleaned = str(rate_str).replace('$', '').replace(',', '').strip()
+            self.logger.debug(f"Cleaned rate string: '{cleaned}'")
+            
+            try:
+                return float(cleaned)
+            except (ValueError, TypeError) as e:
+                self.logger.error(f"Failed to convert rate string '{rate_str}' to float: {str(e)}")
+                return 0.0
+
+    def _get_ppo_rate(self, provider_tin: str, cpt_code: str, modifier: Optional[str] = None) -> Optional[float]:
+        """Get PPO rate for a provider and CPT code, considering modifiers 26 and TC if present."""
+        # Base query for standard rate lookup
         query = "SELECT rate FROM ppo WHERE TRIM(TIN) = ? AND proc_cd = ?"
-        result = pd.read_sql_query(query, self.conn, params=[provider_tin, cpt_code])
+        params = [provider_tin, cpt_code]
+        
+        # If modifier is 26 or TC, look for specific rate
+        if modifier in ['26', 'TC']:
+            query += " AND modifier = ?"
+            params.append(modifier)
+        
+        result = pd.read_sql_query(query, self.conn, params=params)
         
         if not result.empty:
-            return result['rate'].iloc[0]
+            return self._clean_rate_string(result['rate'].iloc[0])
         return None
     
     def _get_ota_rate(self, order_id: str, cpt_code: str) -> Optional[float]:
@@ -405,7 +447,7 @@ class RateValidator:
         result = pd.read_sql_query(query, self.conn, params=[order_id, cpt_code])
         
         if not result.empty:
-            return result['rate'].iloc[0]
+            return self._clean_rate_string(result['rate'].iloc[0])
         return None
     
     def _get_equivalent_code_rate(self, provider_tin: str, cpt_code: str) -> Optional[Dict]:

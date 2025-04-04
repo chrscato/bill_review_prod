@@ -2,6 +2,7 @@
 from typing import Dict, List, Set, Tuple, Optional
 import json
 from pathlib import Path
+from core.models.clinical_intent import ClinicalIntent
 
 class BundleValidator:
     """
@@ -37,7 +38,16 @@ class BundleValidator:
             raise FileNotFoundError(f"Bundle configuration not found: {config_path}")
             
         with open(config_path, 'r') as f:
-            return json.load(f)
+            config = json.load(f)
+            
+        # Convert core_codes and optional_codes to sets for each bundle
+        for bundle_info in config.values():
+            if 'core_codes' in bundle_info:
+                bundle_info['core_codes'] = set(bundle_info['core_codes'])
+            if 'optional_codes' in bundle_info:
+                bundle_info['optional_codes'] = set(bundle_info['optional_codes'])
+                
+        return config
         
     def _categorize_bundles(self) -> Dict:
         """
@@ -88,7 +98,7 @@ class BundleValidator:
         }
         
         # Convert to a set for easier operations
-        cpt_codes_set = set(cpt_codes)
+        cpt_codes_set = set(cpt_codes) if not isinstance(cpt_codes, set) else cpt_codes
         
         for bundle_name, bundle_info in self.bundle_config.items():
             core_codes = set(bundle_info.get('core_codes', []))
@@ -228,10 +238,15 @@ class BundleValidator:
         
         # Extract CPT codes from HCFA data
         hcfa_cpt_codes = set()
-        if 'line_items' in hcfa_data and isinstance(hcfa_data['line_items'], list):
-            for line in hcfa_data['line_items']:
-                if 'cpt' in line:
-                    hcfa_cpt_codes.add(str(line['cpt']))
+        
+        # Handle both line_items and service_lines formats
+        hcfa_lines = hcfa_data.get('line_items', []) or hcfa_data.get('service_lines', [])
+        if isinstance(hcfa_lines, list):
+            for line in hcfa_lines:
+                # Handle both cpt and cpt_code fields
+                cpt = line.get('cpt') or line.get('cpt_code')
+                if cpt:
+                    hcfa_cpt_codes.add(str(cpt))
         
         # Compare bundles
         comparison = self.compare_bundles(order_cpt_codes, hcfa_cpt_codes)

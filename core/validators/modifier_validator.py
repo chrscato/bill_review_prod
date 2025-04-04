@@ -88,10 +88,12 @@ class ModifierValidator:
         if not hcfa_data or "line_items" not in hcfa_data:
             return result
         
-        # Check each line item for TC or 26 modifiers
+        # Check each line item ONLY for TC or 26 modifiers
         for i, line in enumerate(hcfa_data.get('line_items', [])):
+            # Parse and clean modifiers
             modifiers = self._parse_modifiers(line.get('modifier'))
             
+            # Check ONLY for TC or 26
             if "TC" in modifiers:
                 result["is_component_billing"] = True
                 result["component_type"] = "technical"
@@ -109,13 +111,13 @@ class ModifierValidator:
                     "modifier": "26"
                 })
         
-        # Generate appropriate message
+        # Generate message if component billing detected
         if result["is_component_billing"]:
             if result["component_type"] == "technical":
-                result["message"] = "This is a technical component (TC) bill, not a global bill."
+                result["message"] = "Technical component (TC) bill"
             else:
-                result["message"] = "This is a professional component (26) bill, not a global bill."
-                
+                result["message"] = "Professional component (26) bill"
+            
             if len(result["affected_line_items"]) > 1:
                 result["message"] += f" ({len(result['affected_line_items'])} line items affected)"
         
@@ -188,7 +190,7 @@ class ModifierValidator:
             
             # Check for required modifiers based on bundle type
             if bundle_type and bundle_type in self.bundle_modifier_rules:
-                required = self.bundle_modifier_rules[bundle_type].get('required', set())
+                required = set(self.bundle_modifier_rules[bundle_type].get('required', []))
                 missing = required - modifiers
                 if missing:
                     missing_required.append({

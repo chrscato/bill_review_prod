@@ -100,7 +100,8 @@ class DatabaseService:
                 p."Provider Type",
                 p."TIN",
                 p."NPI",
-                p.PrimaryKey
+                p.PrimaryKey,
+                p.State
             FROM orders o
             JOIN providers p ON o.provider_id = p.PrimaryKey
             WHERE o.Order_ID = ?

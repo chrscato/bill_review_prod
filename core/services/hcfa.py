@@ -69,6 +69,9 @@ class HCFAService:
             if not data:
                 return None
                 
+            # Add the filename to the data
+            data['filename'] = filename
+                
             # Return the data as-is without transformation
             return data
             

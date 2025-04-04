@@ -33,6 +33,7 @@ class Settings:
     FAILS_PATH = FAILS_DIR
     DB_PATH = DB_PATH
     LOG_PATH = Path(r"C:\Users\ChristopherCato\OneDrive - clarity-dx.com\Documents\Bill_Review_INTERNAL\validation logs")
+    PDF_ARCHIVE_PATH = Path(r"C:\Users\ChristopherCato\OneDrive - clarity-dx.com\Documents\Bill_Review_INTERNAL\scripts\VAILIDATION\data\pdf\archive")
     
     # Configuration files
     BUNDLE_CONFIG = Path(r"C:\Users\ChristopherCato\OneDrive - clarity-dx.com\Documents\Bill_Review_INTERNAL\scripts\VAILIDATION\BRsystem\config\procedure_bundles.json")

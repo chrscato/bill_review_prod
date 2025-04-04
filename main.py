@@ -126,29 +126,25 @@ class BillReviewApplication:
                 critical_failures = []
                 non_critical_failures = []
                 
-                # 1. First check bundle matching
+                # Detect bundle from line items
                 bundle_result = validators['bundle'].validate(order_data, hcfa_data)
                 validation_results['bundle'] = bundle_result
-                
-                # If a bundle is detected, attach this information for other validators to use
-                if bundle_result.get('status') == 'PASS' and bundle_result.get('bundle_comparison', {}).get('status') != 'NO_BUNDLE':
-                    # Store bundle information in the HCFA data
-                    bundle_info = bundle_result.get('bundle_comparison', {}).get('hcfa_bundle')
-                    if bundle_info:
-                        # Attach bundle info to HCFA data
-                        hcfa_data['bundle_type'] = bundle_info.get('bundle_type')
-                        hcfa_data['bundle_name'] = bundle_info.get('bundle_name')
+
+                # If a bundle is detected, attach its information
+                if bundle_result.get('status') == 'PASS':
+                    bundle_comparison = bundle_result.get('bundle_comparison', {})
+                    hcfa_bundle = bundle_comparison.get('hcfa_bundle', {})
+                    
+                    if hcfa_bundle and hcfa_bundle.get('bundle_type') and hcfa_bundle.get('bundle_name'):
+                        # Attach bundle info to HCFA data if found
+                        hcfa_data['bundle_type'] = hcfa_bundle.get('bundle_type')
+                        hcfa_data['bundle_name'] = hcfa_bundle.get('bundle_name')
                         
-                        # Attach bundle info to each line item for rate validation
+                        # Optionally, attach to line items for further processing
                         for line in hcfa_data.get('line_items', []):
-                            if str(line.get('cpt', '')) in bundle_info.get('all_bundle_codes', []):
-                                line['bundle_type'] = bundle_info.get('bundle_type')
-                                line['bundle_name'] = bundle_info.get('bundle_name')
-                                
-                                # Mark first line as primary component for rate validation
-                                line['primary_component'] = not any(
-                                    l.get('primary_component', False) for l in hcfa_data.get('line_items', [])
-                                )
+                            if str(line.get('cpt', '')) in hcfa_bundle.get('all_bundle_codes', []):
+                                line['bundle_type'] = hcfa_bundle.get('bundle_type')
+                                line['bundle_name'] = hcfa_bundle.get('bundle_name')
                 
                 # 2. Check clinical intent - understanding the purpose of the procedure
                 intent_result = validators['intent'].validate(order_data, hcfa_data)
@@ -501,15 +497,36 @@ class BillReviewApplication:
                 "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
                 "order_id": order_id if 'order_id' in locals() else None,
                 "provider_info": provider_info if 'provider_info' in locals() else None,
-                "has_line_items": not order_lines.empty if 'order_lines' in locals() else False
+                "has_line_items": not order_lines.empty if 'order_lines' in locals() else False,
+                "traceback": traceback.format_exc(),
+                "data_context": {
+                    "order_data": order_data if 'order_data' in locals() else None,
+                    "hcfa_data": hcfa_data if 'hcfa_data' in locals() else None,
+                    "order_cpt_codes": list(order_cpt_codes) if 'order_cpt_codes' in locals() else None,
+                    "hcfa_cpt_codes": list(hcfa_cpt_codes) if 'hcfa_cpt_codes' in locals() else None,
+                    "bundle_config": self.bundle_config if hasattr(self, 'bundle_config') else None
+                }
             }
+            
+            # Create detailed error message
+            error_message = [
+                f"Error processing file: {str(e)}",
+                f"Error type: {type(e).__name__}",
+                f"File: {file_path.name}",
+                f"Order ID: {order_id if 'order_id' in locals() else 'Not found'}",
+                "\nData Context:",
+                f"Order CPT codes: {list(order_cpt_codes) if 'order_cpt_codes' in locals() else 'Not found'}",
+                f"HCFA CPT codes: {list(hcfa_cpt_codes) if 'hcfa_cpt_codes' in locals() else 'Not found'}",
+                "\nTraceback:",
+                traceback.format_exc()
+            ]
             
             error_result = ValidationResult(
                 **base_result,
                 status="FAIL",
                 validation_type="process_error",
                 details=error_details,
-                messages=[f"Error processing file: {str(e)}"]
+                messages=error_message
             )
             
             # Add to results list
@@ -525,8 +542,8 @@ class BillReviewApplication:
             with open(file_path, 'r', encoding='utf-8') as f:
                 file_data = json.load(f)
             
-            # Add error message to the file
-            file_data['validation_messages'] = [f"Error processing file: {str(e)}"]
+            # Add detailed error messages to the file
+            file_data['validation_messages'] = error_message
             
             # Write the modified file to the fails directory
             with open(target_path, 'w', encoding='utf-8') as f:

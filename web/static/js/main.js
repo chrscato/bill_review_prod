@@ -1018,6 +1018,26 @@ function displayDetails(jsonDetails, dbDetails) {
     </div>
 
     <div class="card mb-4">
+      <div class="card-header">
+        <h6 class="mb-0">Original Document</h6>
+      </div>
+      <div class="card-body">
+        ${jsonDetails.filename ? `
+          <a href="/api/pdf/${jsonDetails.filename}" 
+             class="btn btn-primary" 
+             target="_blank">
+            <i class="bi bi-file-pdf"></i> View Original PDF
+          </a>
+          <p class="mt-2 small text-muted">Opens the original document that was processed for validation</p>
+        ` : `
+          <div class="alert alert-warning">
+            <i class="bi bi-exclamation-triangle"></i> Original PDF file information not available
+          </div>
+        `}
+      </div>
+    </div>
+
+    <div class="card mb-4">
       <div class="card-header d-flex justify-content-between align-items-center">
         <h6 class="mb-0">Patient Information</h6>
         <div>
@@ -1285,6 +1305,10 @@ function displayDetails(jsonDetails, dbDetails) {
                 <tr>
                   <th>Billing ZIP</th>
                   <td>${createEditableField(providerDetails.billing_address_postal_code, 'db_provider_details.billing_address_postal_code')}</td>
+                </tr>
+                <tr>
+                  <th>Location State</th>
+                  <td>${createEditableField(providerDetails['State'], 'db_provider_details.State')}</td>
                 </tr>
               </tbody>
             </table>

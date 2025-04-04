@@ -1,4 +1,4 @@
-from flask import Flask, render_template, jsonify, request, send_from_directory
+from flask import Flask, render_template, jsonify, request, send_from_directory, send_file, abort
 from pathlib import Path
 import json
 from typing import List, Dict
@@ -521,6 +521,41 @@ def get_dashboard_data():
         
     except Exception as e:
         logger.error(f"Error getting dashboard data: {str(e)}")
+        return jsonify({
+            'status': 'error',
+            'message': str(e)
+        }), 500
+
+@app.route('/api/pdf/<filename>')
+def get_pdf(filename):
+    """API endpoint to serve original PDF files associated with validation failures."""
+    try:
+        # Security check: Prevent directory traversal
+        if '..' in filename or '/' in filename or '\\' in filename:
+            logger.error(f"Invalid filename requested: {filename}")
+            abort(404)
+            
+        # Convert JSON filename to PDF filename if needed
+        if filename.endswith('.json'):
+            pdf_filename = filename[:-5] + '.pdf'
+        else:
+            pdf_filename = filename + '.pdf'
+            
+        pdf_path = os.path.join(settings.PDF_ARCHIVE_PATH, pdf_filename)
+        
+        # Check if file exists
+        if not os.path.isfile(pdf_path):
+            logger.error(f"PDF file not found: {pdf_path}")
+            return jsonify({
+                'status': 'error',
+                'message': 'PDF file not found'
+            }), 404
+            
+        # Serve the file
+        return send_file(pdf_path, mimetype='application/pdf')
+    
+    except Exception as e:
+        logger.error(f"Error serving PDF file: {str(e)}")
         return jsonify({
             'status': 'error',
             'message': str(e)
