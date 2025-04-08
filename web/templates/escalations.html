@@ -1,0 +1,267 @@
+{% extends "index.html" %}
+
+{% block title %}Escalations - Healthcare Bill Review System{% endblock %}
+
+{% block page_header %}Escalated Bills Review{% endblock %}
+
+{% block page_description %}Review bills that have been escalated for manual review.{% endblock %}
+
+{% block filter_default %}escalated{% endblock %}
+
+{% block body_class %}escalations-page{% endblock %}
+
+{% block extra_scripts %}
+<script src="{{ url_for('static', filename='js/main.js') }}"></script>
+<script>
+    // Override the document list endpoint
+    async function loadDocumentList() {
+        try {
+            showLoading();
+            const response = await fetch('/api/escalations');
+            if (!response.ok) {
+                throw new Error(`HTTP error! status: ${response.status}`);
+            }
+            const data = await response.json();
+            if (data.error) {
+                throw new Error(data.error);
+            }
+            if (!Array.isArray(data)) {
+                throw new Error('Invalid response format from server');
+            }
+            renderEscalatedDocumentList(data);
+        } catch (error) {
+            console.error('Error loading document list:', error);
+            showError('Failed to load escalated bills: ' + error.message);
+            // Clear the document list to prevent showing rate issues
+            document.getElementById('documentList').innerHTML = '';
+        } finally {
+            hideLoading();
+        }
+    }
+
+    // Custom render function for escalated documents
+    function renderEscalatedDocumentList(documents) {
+        const container = document.getElementById('documentList');
+        container.innerHTML = '';
+
+        documents.forEach(doc => {
+            const div = document.createElement('div');
+            div.className = 'document-item';
+            div.innerHTML = `
+                <div class="d-flex justify-content-between align-items-center">
+                    <div class="text-truncate">
+                        ${doc.filename}
+                    </div>
+                    <span class="status-badge status-escalated">
+                        Escalated
+                    </span>
+                </div>
+                <div class="small text-muted">
+                    ${doc.patient_name} - ${doc.date_of_service}
+                </div>
+                <div class="small text-danger">
+                    ${doc.escalation_message || 'No escalation message'}
+                </div>
+            `;
+            div.onclick = () => loadDocumentDetails(doc.filename);
+            container.appendChild(div);
+        });
+    }
+
+    // Override the document details endpoint
+    async function loadDocumentDetails(filename) {
+        try {
+            showLoading();
+            const response = await fetch(`/api/escalations/${filename}`);
+            if (!response.ok) {
+                throw new Error(`HTTP error! status: ${response.status}`);
+            }
+            const data = await response.json();
+            if (data.error) {
+                throw new Error(data.error);
+            }
+            // Construct the dbDetails object expected by displayDetails
+            const dbDetails = {
+                order_details: data.order_details,
+                provider_details: data.provider_info, // Map provider_info to provider_details
+                line_items: data.order_details?.line_items // Assuming line_items are within order_details
+            };
+            
+            // Store the Order_ID for use in buttons
+            const orderId = data.data?.Order_ID; 
+
+            // Call the generic display function - this should add the default #action-buttons container
+            displayDetails(data.data, dbDetails);
+            
+            // --- Add/Append Escalation-Specific and PDF Actions --- 
+            // Wait a brief moment for displayDetails to render
+            await new Promise(resolve => setTimeout(resolve, 200)); 
+            
+            // Find the action buttons container created by displayDetails, or create if needed
+            let actionButtonContainer = document.getElementById('action-buttons');
+            if (!actionButtonContainer) {
+                console.warn('#action-buttons container not found, creating one.');
+                actionButtonContainer = document.createElement('div');
+                actionButtonContainer.className = 'd-flex flex-wrap gap-2 mt-3'; // Use flex-wrap for responsiveness
+                actionButtonContainer.id = 'action-buttons';
+                const detailsPanel = document.getElementById('hcfaDetails');
+                const cardBody = detailsPanel?.querySelector('.card-body');
+                if (cardBody) {
+                    cardBody.appendChild(actionButtonContainer);
+                } else {
+                    console.error('Cannot find details panel body to append action buttons.');
+                    detailsPanel?.appendChild(actionButtonContainer);
+                }
+            }
+            
+            // --- Add Buttons --- 
+            
+            // Clear any previous buttons we might have added in this specific container
+            // actionButtonContainer.innerHTML = ''; // Optional: Uncomment if duplicates appear
+
+            // Add "Fix Rate Issues" button (Triggers Rate Modal)
+            const fixRateButton = document.createElement('button');
+            fixRateButton.className = 'btn btn-warning'; // Yellow for warning/fix
+            fixRateButton.textContent = 'Fix Rate Issues';
+            fixRateButton.setAttribute('data-bs-toggle', 'modal');
+            fixRateButton.setAttribute('data-bs-target', '#rateCorrectionModal');
+            fixRateButton.onclick = () => {
+                // We need to ensure the rate correction modal has the necessary data
+                // This likely involves calling a function from rate_correction.js
+                // Let's assume setupRateCorrectionModal exists and takes the json/db data
+                if (typeof setupRateCorrectionModal === 'function') {
+                    setupRateCorrectionModal(data.data, dbDetails);
+                } else {
+                    console.error('setupRateCorrectionModal function not found. Cannot open modal.');
+                    showError('Error preparing rate correction modal.');
+                }
+            };
+            actionButtonContainer.appendChild(fixRateButton);
+
+            // Add "OON Add OTA Rates" button (Triggers OTA Modal)
+            const addOtaButton = document.createElement('button');
+            addOtaButton.className = 'btn btn-info'; // Blue for OTA info
+            addOtaButton.textContent = 'OON Add OTA Rates';
+            addOtaButton.setAttribute('data-bs-toggle', 'modal');
+            addOtaButton.setAttribute('data-bs-target', '#otaCorrectionModal');
+            addOtaButton.onclick = () => {
+                // We need to ensure the OTA modal has the necessary data
+                // Assume setupOtaCorrectionModal exists
+                 if (typeof setupOtaCorrectionModal === 'function') {
+                    setupOtaCorrectionModal(data.data, dbDetails);
+                 } else {
+                    console.error('setupOtaCorrectionModal function not found. Cannot open modal.');
+                    showError('Error preparing OTA correction modal.');
+                 }
+            };
+            // TODO: Add logic here to only show this if provider is OON
+            actionButtonContainer.appendChild(addOtaButton);
+
+            // Add "Resolve Escalation" button (Append)
+            const resolveButton = document.createElement('button');
+            resolveButton.className = 'btn btn-success'; // Green for resolve
+            resolveButton.textContent = 'Resolve Escalation';
+            resolveButton.onclick = () => handleResolveEscalation(filename);
+            actionButtonContainer.appendChild(resolveButton);
+            
+            // Add "Keep Escalated (Add Note)" button (Append)
+            const addNoteButton = document.createElement('button');
+            addNoteButton.className = 'btn btn-secondary'; // Standard secondary
+            addNoteButton.textContent = 'Keep Escalated (Add Note)';
+            addNoteButton.onclick = () => handleAddEscalationNote(filename);
+            actionButtonContainer.appendChild(addNoteButton);
+
+            // Add "Download PDF" button (Append)
+            if (orderId) { // Only add if we have an Order_ID
+                const downloadPdfButton = document.createElement('button');
+                downloadPdfButton.className = 'btn btn-dark'; // Dark for download utility
+                downloadPdfButton.textContent = 'Download PDF';
+                downloadPdfButton.onclick = () => handleDownloadPdf(orderId);
+                actionButtonContainer.appendChild(downloadPdfButton);
+            } else {
+                console.warn('No Order_ID found, cannot add Download PDF button.');
+            }
+            
+        } catch (error) {
+            console.error('Error loading document details:', error);
+            showError('Failed to load bill details: ' + error.message);
+        } finally {
+            hideLoading();
+        }
+    }
+
+    // --- Helper Functions for Escalation Actions ---
+    async function handleResolveEscalation(filename) {
+        if (confirm('Are you sure you want to resolve this escalation? This will move the file back to the staging directory.')) {
+            try {
+                showLoading();
+                const response = await fetch(`/api/escalations/${filename}/resolve`, { method: 'POST' });
+                if (!response.ok) throw new Error('Failed to resolve escalation.');
+                const result = await response.json();
+                if (result.success) {
+                    showSuccess('Escalation resolved successfully. File moved to staging.');
+                    // Reload the list to remove the resolved item
+                    loadDocumentList(); 
+                    // Clear details panel
+                    clearDetailsPanels(); 
+                } else {
+                    throw new Error(result.message || 'Failed to resolve.');
+                }
+            } catch (error) {
+                showError(`Error resolving escalation: ${error.message}`);
+            } finally {
+                hideLoading();
+            }
+        }
+    }
+
+    function handleAddEscalationNote(filename) {
+        const note = prompt('Add a note to keep this bill escalated:');
+        if (note && note.trim() !== '') {
+            // Placeholder: Implement API call to add note if needed
+            alert(`Note added (placeholder): "${note}" for ${filename}`);
+            // Optionally update the UI or fetch details again if the note is stored server-side
+        } else if (note !== null) {
+            alert('Note cannot be empty.');
+        }
+    }
+    
+    async function handleDownloadPdf(orderId) {
+        if (!orderId) {
+            showError('Cannot download PDF: Order ID is missing.');
+            return;
+        }
+        // Trigger download by navigating to the download endpoint
+        window.location.href = `/api/download_pdf/${orderId}`;
+    }
+
+    // Placeholder for clearDetailsPanels if not already globally available
+    if (typeof clearDetailsPanels === 'undefined') {
+        function clearDetailsPanels() {
+            const hcfaDetails = document.getElementById('hcfaDetails');
+            if (hcfaDetails) hcfaDetails.innerHTML = '';
+            const dbDetails = document.getElementById('dbDetails');
+            if (dbDetails) dbDetails.innerHTML = '';
+            currentDocument = null; // Assuming currentDocument is accessible
+        }
+    }
+
+    // Initialize the page
+    document.addEventListener('DOMContentLoaded', function() {
+        // Remove the status filter since we only show escalated items
+        const statusFilter = document.getElementById('statusFilter');
+        if (statusFilter) {
+            statusFilter.style.display = 'none';
+        }
+        
+        // Clear any existing document list
+        const documentList = document.getElementById('documentList');
+        if (documentList) {
+            documentList.innerHTML = '';
+        }
+        
+        // Load escalated documents
+        loadDocumentList();
+    });
+</script>
+{% endblock %} 

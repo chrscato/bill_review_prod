@@ -13,6 +13,7 @@ import os
 from core.services.normalizer import normalize_hcfa_format
 from web.routes.rate_routes import rate_bp  # Import the rate routes blueprint
 from web.routes.ota_routes import ota_bp
+import shutil
 
 app = Flask(__name__)
 CORS(app)  # Enable CORS for all routes
@@ -29,6 +30,143 @@ hcfa_service = HCFAService()
 # Register blueprints
 app.register_blueprint(rate_bp, url_prefix='/api/rates')
 app.register_blueprint(ota_bp, url_prefix='/api/otas')
+
+# Configure paths
+app.config['JSON_PATH'] = r"C:\Users\ChristopherCato\OneDrive - clarity-dx.com\Documents\Bill_Review_INTERNAL\scripts\VAILIDATION\data\extracts\valid\mapped\staging"
+app.config['SUCCESS_PATH'] = r"C:\Users\ChristopherCato\OneDrive - clarity-dx.com\Documents\Bill_Review_INTERNAL\scripts\VAILIDATION\data\extracts\valid\mapped\staging\success"
+app.config['FAILS_PATH'] = r"C:\Users\ChristopherCato\OneDrive - clarity-dx.com\Documents\Bill_Review_INTERNAL\scripts\VAILIDATION\data\extracts\valid\mapped\staging\fails"
+app.config['ESCALATE_PATH'] = r"C:\Users\ChristopherCato\OneDrive - clarity-dx.com\Documents\Bill_Review_INTERNAL\scripts\VAILIDATION\data\extracts\valid\mapped\staging\escalations"
+
+# Process instructions data
+PROCESS_INSTRUCTIONS = {
+    'ota': {
+        'title': 'OTA Corrections Process',
+        'steps': [
+            {
+                'title': 'Click "OON Add OTA Rates" Button',
+                'description': 'Locate and click the orange "OON Add OTA Rates" button in the bill details panel.',
+                'alerts': [
+                    {
+                        'type': 'warning',
+                        'icon': 'exclamation-triangle',
+                        'text': 'This button is only available for out-of-network providers.'
+                    }
+                ]
+            },
+            {
+                'title': 'Verify Non-Global Status',
+                'description': 'Confirm that the bill is non-global by checking the service lines for TC or 26 modifiers.',
+                'alerts': [
+                    {
+                        'type': 'danger',
+                        'icon': 'x-circle',
+                        'text': 'If the bill is non-global:\n1. Click the "Escalate Bill" button\n2. Add note: "Non-global bill - requires manual review"'
+                    }
+                ]
+            },
+            {
+                'title': 'Check FileMaker for OTA Attachment',
+                'description': 'Search for the OTA attachment in FileMaker using the order details provided.',
+                'alerts': [
+                    {
+                        'type': 'info',
+                        'icon': 'info-circle',
+                        'text': 'Look for attachments in the order record.'
+                    }
+                ]
+            },
+            {
+                'title': 'Check OneDrive Link',
+                'description': 'Access the OneDrive link to search for the OTA document:',
+                'alerts': [
+                    {
+                        'type': 'info',
+                        'icon': 'link-45deg',
+                        'text': 'OTA Documents OneDrive Folder',
+                        'link': 'https://netorgft5472802-my.sharepoint.com/:f:/g/personal/kim_vileno_clarity-dx_com/ErDODDCwxSBKnWn02Ni8ZB0B5hSLxpPEgPz9BQixbUKusA?e=eH8wNR'
+                    }
+                ]
+            },
+            {
+                'title': 'Check for Percentage-Based WCFS Rate',
+                'description': 'If OTA document is found, check if it specifies a percentage of WCFS rate:',
+                'alerts': [
+                    {
+                        'type': 'danger',
+                        'icon': 'x-circle',
+                        'text': 'If the OTA document specifies a percentage of WCFS rate:\n1. Click the "Escalate Bill" button\n2. Add note: "OTA document found with percentage-based WCFS rate: [X]%"'
+                    }
+                ]
+            },
+            {
+                'title': 'Escalate if Not Found',
+                'description': 'If the OTA document cannot be found in either FileMaker or OneDrive:',
+                'alerts': [
+                    {
+                        'type': 'danger',
+                        'icon': 'x-circle',
+                        'text': '1. Click the "Escalate Bill" button\n2. Add note: "Unable to find OTA document in FileMaker or OneDrive"'
+                    }
+                ]
+            }
+        ]
+    },
+    'inn': {
+        'title': 'INN Rate Corrections Process',
+        'steps': [
+            {
+                'title': 'Lookup Provider in FileMaker',
+                'description': 'Search for the provider using either:',
+                'alerts': [
+                    {
+                        'type': 'info',
+                        'icon': 'info-circle',
+                        'text': '• TIN from the FileMaker order\n• DBA name listed with the FileMaker order'
+                    }
+                ]
+            },
+            {
+                'title': 'Locate Contract Attachment',
+                'description': 'Navigate to the attachments section and look for the contract document.',
+                'alerts': [
+                    {
+                        'type': 'info',
+                        'icon': 'link-45deg',
+                        'text': 'Alternative: Search in Providers SharePoint Folder',
+                        'link': 'https://netorgft5472802.sharepoint.com/sites/Providers'
+                    }
+                ]
+            },
+            {
+                'title': 'Check Exhibit A for Rates',
+                'description': 'In the contract, locate Exhibit A to find the rate information.',
+                'alerts': [
+                    {
+                        'type': 'warning',
+                        'icon': 'exclamation-triangle',
+                        'text': 'Pay special attention to the rate structure type.'
+                    }
+                ]
+            },
+            {
+                'title': 'Determine Rate Type',
+                'description': 'Based on the contract terms:',
+                'alerts': [
+                    {
+                        'type': 'success',
+                        'icon': 'check-circle',
+                        'text': 'If explicit dollar amounts for procedure categories:\n1. Make category corrections as needed\n2. Update rates according to contract amounts'
+                    },
+                    {
+                        'type': 'danger',
+                        'icon': 'x-circle',
+                        'text': 'If percentage of WCFS:\n1. Click the "Escalate Bill" button\n2. Add note: "Percentage-based contract - requires manual calculation"'
+                    }
+                ]
+            }
+        ]
+    }
+}
 
 @contextmanager
 def get_db_connection():
@@ -129,6 +267,23 @@ def rate_corrections():
 def ota_review():
     """Render the OTA review page."""
     return render_template('ota.html')
+
+@app.route('/escalations')
+def escalations():
+    """Render the escalations page."""
+    return render_template('escalations.html')
+
+@app.route('/instructions')
+def instructions():
+    return render_template('instructions.html')
+
+@app.route('/instructions/<process>')
+def process_detail(process):
+    if process not in PROCESS_INSTRUCTIONS:
+        abort(404)
+    return render_template('process_detail.html', 
+                         process_title=PROCESS_INSTRUCTIONS[process]['title'],
+                         steps=PROCESS_INSTRUCTIONS[process]['steps'])
 
 @app.route('/api/failures')
 def get_failures():
@@ -560,6 +715,161 @@ def get_pdf(filename):
             'status': 'error',
             'message': str(e)
         }), 500
+
+@app.route('/api/failures/<filename>/escalate', methods=['POST'])
+def escalate_failure(filename):
+    try:
+        # Get the message from the request body
+        data = request.get_json()
+        message = data.get('message', '') if data else ''
+        
+        # Check if the failure file exists
+        failure_path = os.path.join(app.config['FAILS_PATH'], filename)
+        if not os.path.exists(failure_path):
+            return jsonify({'success': False, 'error': f'Failure file {filename} not found'}), 404
+
+        # Read the failure file
+        with open(failure_path, 'r') as f:
+            failure_data = json.load(f)
+
+        # Add escalation timestamp and message
+        failure_data['escalated_at'] = datetime.now().isoformat()
+        if message:
+            failure_data['escalation_message'] = message
+
+        # Write to escalate directory
+        escalate_path = os.path.join(app.config['ESCALATE_PATH'], filename)
+        os.makedirs(os.path.dirname(escalate_path), exist_ok=True)
+        with open(escalate_path, 'w') as f:
+            json.dump(failure_data, f, indent=4)
+
+        # Remove from fails directory
+        os.remove(failure_path)
+
+        logger.info(f"Escalated failure: {filename}")
+        if message:
+            logger.info(f"Escalation message: {message}")
+        return jsonify({'success': True})
+
+    except Exception as e:
+        logger.error(f"Error escalating failure {filename}: {str(e)}")
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+@app.route('/api/escalations')
+def list_escalations():
+    """List all escalated files."""
+    try:
+        escalate_path = Path(app.config['ESCALATE_PATH'])
+        if not escalate_path.exists():
+            return jsonify([])
+            
+        files = []
+        for file_path in escalate_path.glob('*.json'):
+            try:
+                with open(file_path, 'r') as f:
+                    data = json.load(f)
+                    files.append({
+                        'filename': file_path.name,
+                        'order_id': data.get('Order_ID'),
+                        'patient_name': data.get('patient_info', {}).get('patient_name', '').replace(')\n', '').replace('\n', ' ').strip(),
+                        'date_of_service': data.get('service_lines', [{}])[0].get('date_of_service'),
+                        'escalated_at': data.get('escalated_at'),
+                        'escalation_message': data.get('escalation_message'),
+                        'validation_messages': data.get('validation_messages', []),
+                        'total_charge': data.get('billing_info', {}).get('total_charge'),
+                        'provider_tin': data.get('billing_info', {}).get('billing_provider_tin')
+                    })
+            except Exception as e:
+                logger.error(f"Error reading file {file_path}: {str(e)}")
+                continue
+                
+        return jsonify(files)
+    except Exception as e:
+        logger.error(f"Error listing escalations: {str(e)}")
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/api/escalations/<filename>')
+def get_escalation_details(filename):
+    """Get details for a specific escalated file."""
+    try:
+        file_path = Path(app.config['ESCALATE_PATH']) / filename
+        if not file_path.exists():
+            return jsonify({'error': 'File not found'}), 404
+            
+        with open(file_path, 'r') as f:
+            data = json.load(f)
+            
+        # Get provider info from database
+        with get_db_connection() as conn:
+            provider_info = db_service.get_provider_details(data.get('Order_ID'), conn)
+            order_details = db_service.get_full_details(data.get('Order_ID'), conn)
+            
+        return jsonify({
+            'data': data,
+            'provider_info': provider_info,
+            'order_details': order_details
+        })
+    except Exception as e:
+        logger.error(f"Error getting escalation details: {str(e)}")
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/api/escalations/<filename>/resolve', methods=['POST'])
+def resolve_escalation(filename):
+    """Resolve an escalation by moving the file back to the main staging directory."""
+    try:
+        escalate_path = Path(app.config['ESCALATE_PATH'])
+        staging_path = Path(app.config['JSON_PATH'])
+        file_to_resolve = escalate_path / filename
+
+        if not file_to_resolve.exists():
+            return jsonify({'success': False, 'message': 'File not found in escalations directory.'}), 404
+
+        # Define the target path in the staging directory
+        target_path = staging_path / filename
+
+        # Move the file
+        shutil.move(str(file_to_resolve), str(target_path))
+        logger.info(f"Resolved escalation: Moved {filename} from {escalate_path} to {staging_path}")
+        
+        return jsonify({'success': True, 'message': 'Escalation resolved, file moved to staging.'})
+
+    except Exception as e:
+        logger.error(f"Error resolving escalation for {filename}: {str(e)}")
+        return jsonify({'success': False, 'message': str(e)}), 500
+
+@app.route('/api/download_pdf/<order_id>')
+def download_pdf(order_id):
+    """Download the original PDF document associated with an Order ID."""
+    try:
+        with get_db_connection() as conn:
+            # Assuming a function exists to get the document path based on Order ID
+            # Adjust table/column names or logic if necessary
+            pdf_path_str = db_service.get_document_path(order_id, conn)
+            
+            if not pdf_path_str:
+                logger.warning(f"No PDF path found in database for Order ID: {order_id}")
+                abort(404, description="PDF document path not found for this order.")
+
+            pdf_path = Path(pdf_path_str)
+            
+            if not pdf_path.exists():
+                logger.error(f"PDF file not found at path: {pdf_path_str} for Order ID: {order_id}")
+                abort(404, description="PDF file not found at the specified path.")
+
+            logger.info(f"Sending PDF file: {pdf_path} for Order ID: {order_id}")
+            # Send the file for download
+            return send_file(
+                pdf_path, 
+                as_attachment=True, 
+                download_name=f"{order_id}_bill.pdf" # Suggest a download filename
+            )
+
+    except FileNotFoundError:
+        logger.error(f"FileNotFoundError for Order ID: {order_id} at path: {pdf_path_str if 'pdf_path_str' in locals() else 'unknown'}")
+        abort(404, description="PDF file not found.")
+    except Exception as e:
+        logger.error(f"Error downloading PDF for Order ID {order_id}: {str(e)}")
+        return jsonify({'success': False, 'message': f'Error downloading PDF: {str(e)}'}), 500
 
 if __name__ == '__main__':
     app.run(debug=True) 

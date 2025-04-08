@@ -94,6 +94,10 @@ class LineItemValidator:
                 if not h_cpt:
                     continue
                 
+                # Skip validation for ancillary codes
+                if h_cpt in self.cpt_categories and self.cpt_categories[h_cpt].lower() == 'ancillary':
+                    continue
+                
                 # Find matching order line
                 match_found = False
                 matched_order_line = None

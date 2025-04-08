@@ -1,0 +1,99 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="container mt-4">
+    <div class="d-flex justify-content-between align-items-center mb-4">
+        <h1>{{ process_title }}</h1>
+        <a href="/instructions" class="btn btn-outline-primary">
+            <i class="bi bi-arrow-left"></i> Back to Instructions
+        </a>
+    </div>
+    
+    <div class="card">
+        <div class="card-body">
+            <div class="process-flow">
+                {% for step in steps %}
+                <div class="process-step">
+                    <div class="step-number">{{ loop.index }}</div>
+                    <div class="step-content">
+                        <h4>{{ step.title }}</h4>
+                        <p>{{ step.description }}</p>
+                        {% if step.alerts %}
+                            {% for alert in step.alerts %}
+                            <div class="alert alert-{{ alert.type }}">
+                                <i class="bi bi-{{ alert.icon }}"></i> 
+                                {% if alert.link %}
+                                    <a href="{{ alert.link }}" target="_blank">{{ alert.text }}</a>
+                                {% else %}
+                                    {{ alert.text }}
+                                {% endif %}
+                            </div>
+                            {% endfor %}
+                        {% endif %}
+                    </div>
+                </div>
+                {% endfor %}
+            </div>
+        </div>
+    </div>
+</div>
+
+<style>
+.process-flow {
+    position: relative;
+    padding-left: 50px;
+}
+
+.process-step {
+    position: relative;
+    margin-bottom: 2rem;
+    padding-left: 30px;
+}
+
+.process-step:not(:last-child)::after {
+    content: '';
+    position: absolute;
+    left: 20px;
+    top: 40px;
+    bottom: -2rem;
+    width: 2px;
+    background-color: #dee2e6;
+}
+
+.step-number {
+    position: absolute;
+    left: -10px;
+    top: 0;
+    width: 40px;
+    height: 40px;
+    background-color: #0d6efd;
+    color: white;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-weight: bold;
+    z-index: 1;
+}
+
+.step-content {
+    background-color: #f8f9fa;
+    padding: 1.5rem;
+    border-radius: 0.5rem;
+    border-left: 4px solid #0d6efd;
+}
+
+.step-content h4 {
+    color: #0d6efd;
+    margin-bottom: 1rem;
+}
+
+.alert {
+    margin-top: 1rem;
+}
+
+.alert i {
+    margin-right: 0.5rem;
+}
+</style>
+{% endblock %} 

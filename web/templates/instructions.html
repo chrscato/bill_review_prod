@@ -1,0 +1,67 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="container mt-4">
+    <h1 class="mb-4">Process Instructions</h1>
+    
+    <div class="row">
+        <!-- OTA Corrections Card -->
+        <div class="col-md-6 mb-4">
+            <div class="card h-100">
+                <div class="card-header bg-primary text-white">
+                    <h2 class="mb-0">OTA Corrections</h2>
+                </div>
+                <div class="card-body">
+                    <p class="card-text">Process for handling out-of-network OTA rate corrections, including verification steps and document lookup procedures.</p>
+                    <ul class="list-group list-group-flush mb-3">
+                        <li class="list-group-item">Verify non-global status</li>
+                        <li class="list-group-item">Check FileMaker for attachments</li>
+                        <li class="list-group-item">Search OneDrive for documents</li>
+                        <li class="list-group-item">Escalate if documents not found</li>
+                    </ul>
+                    <a href="/instructions/ota" class="btn btn-primary">View Process Details</a>
+                </div>
+            </div>
+        </div>
+
+        <!-- INN Rate Corrections Card -->
+        <div class="col-md-6 mb-4">
+            <div class="card h-100">
+                <div class="card-header bg-success text-white">
+                    <h2 class="mb-0">INN Rate Corrections</h2>
+                </div>
+                <div class="card-body">
+                    <p class="card-text">Process for handling in-network rate corrections, including contract lookup and rate determination procedures.</p>
+                    <ul class="list-group list-group-flush mb-3">
+                        <li class="list-group-item">Lookup provider in FileMaker</li>
+                        <li class="list-group-item">Locate contract attachments</li>
+                        <li class="list-group-item">Check Exhibit A for rates</li>
+                        <li class="list-group-item">Determine rate type and take action</li>
+                    </ul>
+                    <a href="/instructions/inn" class="btn btn-success">View Process Details</a>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<style>
+.card {
+    transition: transform 0.2s;
+}
+
+.card:hover {
+    transform: translateY(-5px);
+    box-shadow: 0 4px 8px rgba(0,0,0,0.1);
+}
+
+.list-group-item {
+    border-left: none;
+    border-right: none;
+}
+
+.btn {
+    width: 100%;
+}
+</style>
+{% endblock %} 

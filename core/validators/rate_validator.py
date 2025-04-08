@@ -348,6 +348,10 @@ class RateValidator:
             return result
             
         # If no rate is found, mark as failure
+        failure_message = f"No rate found for CPT {cpt}"
+        if modifier in ['26', 'TC']:
+            failure_message += f" with modifier {modifier}"
+            
         result = {
             **line, 
             "validated_rate": None, 
@@ -356,7 +360,7 @@ class RateValidator:
             "unit_adjusted_rate": None,
             "units": units,
             "rate_source": None,
-            "message": f"No rate found for CPT {cpt}"
+            "message": failure_message
         }
         rate_results.append(result)
         return result
@@ -426,20 +430,35 @@ class RateValidator:
 
     def _get_ppo_rate(self, provider_tin: str, cpt_code: str, modifier: Optional[str] = None) -> Optional[float]:
         """Get PPO rate for a provider and CPT code, considering modifiers 26 and TC if present."""
+        # Clean TIN - remove non-digits
+        clean_tin = ''.join(c for c in provider_tin if c.isdigit())
+        
         # Base query for standard rate lookup
-        query = "SELECT rate FROM ppo WHERE TRIM(TIN) = ? AND proc_cd = ?"
-        params = [provider_tin, cpt_code]
+        base_query = "SELECT rate FROM ppo WHERE TRIM(TIN) = ? AND proc_cd = ?"
+        params = [clean_tin, cpt_code]
         
-        # If modifier is 26 or TC, look for specific rate
+        # Only consider TC or 26 modifiers
         if modifier in ['26', 'TC']:
-            query += " AND modifier = ?"
+            # Look for specific rate with the modifier
+            query = base_query + " AND modifier = ?"
             params.append(modifier)
-        
-        result = pd.read_sql_query(query, self.conn, params=params)
-        
-        if not result.empty:
-            return self._clean_rate_string(result['rate'].iloc[0])
-        return None
+            
+            result = pd.read_sql_query(query, self.conn, params=params)
+            if not result.empty:
+                return self._clean_rate_string(result['rate'].iloc[0])
+            
+            # If no rate found with modifier, return None (validation will fail)
+            return None
+        else:
+            # For all other modifiers, ignore them and look for rate without modifier
+            query = base_query + " AND (modifier IS NULL OR modifier = '' OR modifier = ?)"
+            params.append(modifier)  # This will match empty modifier or the same modifier
+            
+            result = pd.read_sql_query(query, self.conn, params=params)
+            if not result.empty:
+                return self._clean_rate_string(result['rate'].iloc[0])
+            
+            return None
     
     def _get_ota_rate(self, order_id: str, cpt_code: str) -> Optional[float]:
         """Get OTA rate for an order and CPT code."""

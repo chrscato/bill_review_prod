@@ -559,26 +559,33 @@ document.addEventListener('DOMContentLoaded', function() {
     // Determine which page we're on and set default filter
     const pathname = window.location.pathname;
     let defaultFilter = 'all';
-    
-    if (pathname === '/unauthorized') {
-        defaultFilter = 'unauthorized';
-    } else if (pathname === '/non-global') {
-        defaultFilter = 'component';
-    } else if (pathname === '/rate-corrections') {
-        defaultFilter = 'rate';
-    } else if (pathname === '/ota') {
-        defaultFilter = 'ota';
+
+    // *** Add check for escalations page ***
+    if (pathname.includes('/escalations')) {
+        // Don't load default failures on the escalations page
+        // The escalations.html template handles loading its own data
+    } else {
+        // Original logic for other pages
+        if (pathname === '/unauthorized') {
+            defaultFilter = 'unauthorized';
+        } else if (pathname === '/non-global') {
+            defaultFilter = 'component';
+        } else if (pathname === '/rate-corrections') {
+            defaultFilter = 'rate';
+        } else if (pathname === '/ota') {
+            defaultFilter = 'ota';
+        }
+
+        // Set the status filter if it exists
+        const statusFilter = document.getElementById('statusFilter');
+        if (statusFilter) {
+            statusFilter.value = defaultFilter;
+        }
+
+        // Call loadFailures with appropriate filter ONLY if not on escalations page
+        loadFailures(defaultFilter);
     }
-    
-    // Set the status filter if it exists
-    const statusFilter = document.getElementById('statusFilter');
-    if (statusFilter) {
-        statusFilter.value = defaultFilter;
-    }
-    
-    // Call loadFailures with appropriate filter
-    loadFailures(defaultFilter);
-    
+
     // Setup event listeners
     setupEventListeners();
     
@@ -644,6 +651,80 @@ async function resolveBill(failure) {
     } finally {
         hideLoading();
     }
+}
+
+/**
+ * Escalate a bill to a separate directory
+ * @param {Object} failure - The failure data object
+ */
+async function escalateBill(failureData) {
+    if (!failureData || !failureData.filename) {
+        console.error('Invalid failure data provided to escalateBill');
+        return;
+    }
+
+    const filename = failureData.filename;
+    const message = prompt('Are you sure you want to escalate this bill? Please enter a reason:');
+    
+    if (message === null) {
+        return; // User cancelled
+    }
+
+    if (message.trim() === '') {
+        alert('Please provide a reason for escalating this bill.');
+        return;
+    }
+
+    // Show loading indicators
+    const loadingIndicator = document.getElementById('loading-indicator');
+    const escalateButton = document.getElementById('escalate-bill-button');
+    if (loadingIndicator) loadingIndicator.style.display = 'block';
+    if (escalateButton) escalateButton.disabled = true;
+
+    // Make the API call to escalate the bill
+    fetch(`/api/failures/${filename}/escalate`, {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ message: message })
+    })
+    .then(response => {
+        if (response.status === 404) {
+            throw new Error('This bill has already been escalated or moved.');
+        }
+        if (!response.ok) {
+            throw new Error(`HTTP error! status: ${response.status}`);
+        }
+        return response.json();
+    })
+    .then(data => {
+        if (data.success) {
+            // Remove the failure from the document list
+            const documentList = document.getElementById('document-list');
+            const listItem = document.querySelector(`li[data-filename="${filename}"]`);
+            if (listItem) {
+                documentList.removeChild(listItem);
+            }
+
+            // Clear the details panels
+            clearDetailsPanels();
+
+            // Show success message
+            alert('Bill has been escalated');
+        } else {
+            throw new Error(data.error || 'Failed to escalate bill');
+        }
+    })
+    .catch(error => {
+        console.error('Error escalating bill:', error);
+        alert('Error escalating bill: ' + error.message);
+    })
+    .finally(() => {
+        // Hide loading indicators
+        if (loadingIndicator) loadingIndicator.style.display = 'none';
+        if (escalateButton) escalateButton.disabled = false;
+    });
 }
 
 // Setup event listeners
@@ -951,6 +1032,20 @@ async function selectDocument(doc) {
                 }
             };
             buttonContainer.appendChild(resolveButton);
+
+            // Add the Escalate button
+            const escalateButton = document.createElement('button');
+            escalateButton.className = 'btn btn-danger';
+            escalateButton.id = 'escalate-bill-button';
+            escalateButton.textContent = 'Escalate Bill';
+            escalateButton.onclick = function() {
+                if (confirm('Are you sure you want to escalate this bill? This will move the file to the escalate directory.')) {
+                    escalateBill({
+                        filename: doc.filename
+                    });
+                }
+            };
+            buttonContainer.appendChild(escalateButton);
 
             // Add the button container after validation messages
             const messagesElement = document.getElementById('hcfaDetails').querySelector('.card-body');
@@ -1686,4 +1781,21 @@ function displayFailures(failures) {
         
         container.appendChild(div);
     });
+}
+
+function clearDetailsPanels() {
+    // Clear HCFA details panel
+    const hcfaDetails = document.getElementById('hcfaDetails');
+    if (hcfaDetails) {
+        hcfaDetails.innerHTML = '';
+    }
+
+    // Clear database details panel
+    const dbDetails = document.getElementById('dbDetails');
+    if (dbDetails) {
+        dbDetails.innerHTML = '';
+    }
+
+    // Clear current document
+    currentDocument = null;
 }

@@ -336,7 +336,22 @@ class ClinicalIntentValidator:
         if 'line_items' in hcfa_data and isinstance(hcfa_data['line_items'], list):
             for line in hcfa_data['line_items']:
                 if 'cpt' in line:
-                    hcfa_cpt_codes.add(str(line['cpt']))
+                    cpt = str(line['cpt'])
+                    # Skip ancillary codes
+                    if cpt in self.procedure_categories and self.procedure_categories[cpt][0].lower() == 'ancillary':
+                        continue
+                    hcfa_cpt_codes.add(cpt)
+        
+        # If no non-ancillary codes to validate, return PASS
+        if not hcfa_cpt_codes:
+            return {
+                'status': 'PASS',
+                'message': 'No non-ancillary codes to validate',
+                'validation_type': 'clinical_intent',
+                'intent_comparison': None,
+                'order_cpt_codes': list(order_cpt_codes),
+                'hcfa_cpt_codes': []
+            }
         
         # Compare clinical intents
         comparison = self.compare_intents(order_cpt_codes, hcfa_cpt_codes)

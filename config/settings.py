@@ -31,6 +31,7 @@ class Settings:
     JSON_PATH = JSON_DIR
     SUCCESS_PATH = SUCCESS_DIR
     FAILS_PATH = FAILS_DIR
+    ESCALATE_PATH = JSON_DIR / "escalate"  # New directory for escalated bills
     DB_PATH = DB_PATH
     LOG_PATH = Path(r"C:\Users\ChristopherCato\OneDrive - clarity-dx.com\Documents\Bill_Review_INTERNAL\validation logs")
     PDF_ARCHIVE_PATH = Path(r"C:\Users\ChristopherCato\OneDrive - clarity-dx.com\Documents\Bill_Review_INTERNAL\scripts\VAILIDATION\data\pdf\archive")

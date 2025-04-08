@@ -316,6 +316,41 @@
         "72074"
       ],
       "description": "X-ray of the thoracic spine"
+    },
+    {
+      "name": "Ultrasound Extremity",
+      "codes": [
+        "76882"
+      ],
+      "description": "Ultrasound of extremities, complete or limited"
+    },
+    {
+      "name": "Therapeutic Spinal Injection",
+      "codes": [
+        "62304"
+      ],
+      "description": "Therapeutic injection into the lumbar or thoracic spine"
+    },
+    {
+      "name": "X-ray Hand",
+      "codes": [
+        "73130"
+      ],
+      "description": "X-ray of the hand, complete"
+    },
+    {
+      "name": "X-ray Finger",
+      "codes": [
+        "73600"
+      ],
+      "description": "X-ray of a single finger"
+    },
+    {
+      "name": "X-ray Foot",
+      "codes": [
+        "73630"
+      ],
+      "description": "X-ray of the foot"
     }
   ],
   "clinical_substitutes": [
