@@ -13,7 +13,6 @@ import os
 from core.services.normalizer import normalize_hcfa_format
 from web.routes.rate_routes import rate_bp  # Import the rate routes blueprint
 from web.routes.ota_routes import ota_bp
-import shutil
 
 app = Flask(__name__)
 CORS(app)  # Enable CORS for all routes
@@ -267,11 +266,6 @@ def rate_corrections():
 def ota_review():
     """Render the OTA review page."""
     return render_template('ota.html')
-
-@app.route('/escalations')
-def escalations():
-    """Render the escalations page."""
-    return render_template('escalations.html')
 
 @app.route('/instructions')
 def instructions():
@@ -754,122 +748,6 @@ def escalate_failure(filename):
     except Exception as e:
         logger.error(f"Error escalating failure {filename}: {str(e)}")
         return jsonify({'success': False, 'error': str(e)}), 500
-
-@app.route('/api/escalations')
-def list_escalations():
-    """List all escalated files."""
-    try:
-        escalate_path = Path(app.config['ESCALATE_PATH'])
-        if not escalate_path.exists():
-            return jsonify([])
-            
-        files = []
-        for file_path in escalate_path.glob('*.json'):
-            try:
-                with open(file_path, 'r') as f:
-                    data = json.load(f)
-                    files.append({
-                        'filename': file_path.name,
-                        'order_id': data.get('Order_ID'),
-                        'patient_name': data.get('patient_info', {}).get('patient_name', '').replace(')\n', '').replace('\n', ' ').strip(),
-                        'date_of_service': data.get('service_lines', [{}])[0].get('date_of_service'),
-                        'escalated_at': data.get('escalated_at'),
-                        'escalation_message': data.get('escalation_message'),
-                        'validation_messages': data.get('validation_messages', []),
-                        'total_charge': data.get('billing_info', {}).get('total_charge'),
-                        'provider_tin': data.get('billing_info', {}).get('billing_provider_tin')
-                    })
-            except Exception as e:
-                logger.error(f"Error reading file {file_path}: {str(e)}")
-                continue
-                
-        return jsonify(files)
-    except Exception as e:
-        logger.error(f"Error listing escalations: {str(e)}")
-        return jsonify({'error': str(e)}), 500
-
-@app.route('/api/escalations/<filename>')
-def get_escalation_details(filename):
-    """Get details for a specific escalated file."""
-    try:
-        file_path = Path(app.config['ESCALATE_PATH']) / filename
-        if not file_path.exists():
-            return jsonify({'error': 'File not found'}), 404
-            
-        with open(file_path, 'r') as f:
-            data = json.load(f)
-            
-        # Get provider info from database
-        with get_db_connection() as conn:
-            provider_info = db_service.get_provider_details(data.get('Order_ID'), conn)
-            order_details = db_service.get_full_details(data.get('Order_ID'), conn)
-            
-        return jsonify({
-            'data': data,
-            'provider_info': provider_info,
-            'order_details': order_details
-        })
-    except Exception as e:
-        logger.error(f"Error getting escalation details: {str(e)}")
-        return jsonify({'error': str(e)}), 500
-
-@app.route('/api/escalations/<filename>/resolve', methods=['POST'])
-def resolve_escalation(filename):
-    """Resolve an escalation by moving the file back to the main staging directory."""
-    try:
-        escalate_path = Path(app.config['ESCALATE_PATH'])
-        staging_path = Path(app.config['JSON_PATH'])
-        file_to_resolve = escalate_path / filename
-
-        if not file_to_resolve.exists():
-            return jsonify({'success': False, 'message': 'File not found in escalations directory.'}), 404
-
-        # Define the target path in the staging directory
-        target_path = staging_path / filename
-
-        # Move the file
-        shutil.move(str(file_to_resolve), str(target_path))
-        logger.info(f"Resolved escalation: Moved {filename} from {escalate_path} to {staging_path}")
-        
-        return jsonify({'success': True, 'message': 'Escalation resolved, file moved to staging.'})
-
-    except Exception as e:
-        logger.error(f"Error resolving escalation for {filename}: {str(e)}")
-        return jsonify({'success': False, 'message': str(e)}), 500
-
-@app.route('/api/download_pdf/<order_id>')
-def download_pdf(order_id):
-    """Download the original PDF document associated with an Order ID."""
-    try:
-        with get_db_connection() as conn:
-            # Assuming a function exists to get the document path based on Order ID
-            # Adjust table/column names or logic if necessary
-            pdf_path_str = db_service.get_document_path(order_id, conn)
-            
-            if not pdf_path_str:
-                logger.warning(f"No PDF path found in database for Order ID: {order_id}")
-                abort(404, description="PDF document path not found for this order.")
-
-            pdf_path = Path(pdf_path_str)
-            
-            if not pdf_path.exists():
-                logger.error(f"PDF file not found at path: {pdf_path_str} for Order ID: {order_id}")
-                abort(404, description="PDF file not found at the specified path.")
-
-            logger.info(f"Sending PDF file: {pdf_path} for Order ID: {order_id}")
-            # Send the file for download
-            return send_file(
-                pdf_path, 
-                as_attachment=True, 
-                download_name=f"{order_id}_bill.pdf" # Suggest a download filename
-            )
-
-    except FileNotFoundError:
-        logger.error(f"FileNotFoundError for Order ID: {order_id} at path: {pdf_path_str if 'pdf_path_str' in locals() else 'unknown'}")
-        abort(404, description="PDF file not found.")
-    except Exception as e:
-        logger.error(f"Error downloading PDF for Order ID {order_id}: {str(e)}")
-        return jsonify({'success': False, 'message': f'Error downloading PDF: {str(e)}'}), 500
 
 if __name__ == '__main__':
     app.run(debug=True) 

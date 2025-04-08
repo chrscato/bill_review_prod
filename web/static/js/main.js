@@ -559,33 +559,26 @@ document.addEventListener('DOMContentLoaded', function() {
     // Determine which page we're on and set default filter
     const pathname = window.location.pathname;
     let defaultFilter = 'all';
-
-    // *** Add check for escalations page ***
-    if (pathname.includes('/escalations')) {
-        // Don't load default failures on the escalations page
-        // The escalations.html template handles loading its own data
-    } else {
-        // Original logic for other pages
-        if (pathname === '/unauthorized') {
-            defaultFilter = 'unauthorized';
-        } else if (pathname === '/non-global') {
-            defaultFilter = 'component';
-        } else if (pathname === '/rate-corrections') {
-            defaultFilter = 'rate';
-        } else if (pathname === '/ota') {
-            defaultFilter = 'ota';
-        }
-
-        // Set the status filter if it exists
-        const statusFilter = document.getElementById('statusFilter');
-        if (statusFilter) {
-            statusFilter.value = defaultFilter;
-        }
-
-        // Call loadFailures with appropriate filter ONLY if not on escalations page
-        loadFailures(defaultFilter);
+    
+    if (pathname === '/unauthorized') {
+        defaultFilter = 'unauthorized';
+    } else if (pathname === '/non-global') {
+        defaultFilter = 'component';
+    } else if (pathname === '/rate-corrections') {
+        defaultFilter = 'rate';
+    } else if (pathname === '/ota') {
+        defaultFilter = 'ota';
     }
-
+    
+    // Set the status filter if it exists
+    const statusFilter = document.getElementById('statusFilter');
+    if (statusFilter) {
+        statusFilter.value = defaultFilter;
+    }
+    
+    // Call loadFailures with appropriate filter
+    loadFailures(defaultFilter);
+    
     // Setup event listeners
     setupEventListeners();
     
