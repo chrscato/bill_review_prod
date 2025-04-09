@@ -1116,4 +1116,23 @@ input:checked + .theme-switch-slider:before {
 #messageList {
     max-height: calc(100vh - 250px);
     overflow-y: auto;
+}
+
+/* Escalation page styles */
+.escalations-page .header {
+    background-color: #dc3545;  /* Red for escalations */
+}
+
+.escalation-alert {
+    background-color: #f8d7da;
+    border-color: #f5c6cb;
+    color: #721c24;
+    padding: 1rem;
+    margin-bottom: 1rem;
+    border-radius: 0.25rem;
+}
+
+.escalation-alert h5 {
+    margin-bottom: 0.5rem;
+    color: #721c24;
 } 

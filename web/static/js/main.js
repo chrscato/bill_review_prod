@@ -595,40 +595,69 @@ document.addEventListener('DOMContentLoaded', function() {
     });
 });
 
-/**
- * Mark a bill as resolved and move it back to staging
- * @param {Object} failure - The failure data object
- */
-async function resolveBill(failure) {
-    if (!failure || !failure.filename) {
-        showError('Invalid failure data');
-        return;
+// Extend the displayDetails function to show escalation message
+const originalDisplayDetails = displayDetails;
+
+displayDetails = function(jsonDetails, dbDetails) {
+  // Call the original function first
+  originalDisplayDetails(jsonDetails, dbDetails);
+  
+  // Now add the escalation message if present
+  if (jsonDetails.escalation_message && jsonDetails.escalated_at) {
+    const hcfaDetails = document.getElementById('hcfaDetails');
+    if (hcfaDetails) {
+      // Format the date
+      const escalatedDate = new Date(jsonDetails.escalated_at);
+      const formattedDate = escalatedDate.toLocaleString();
+      
+      // Create escalation message alert
+      const escalationAlert = document.createElement('div');
+      escalationAlert.className = 'alert alert-danger mb-4';
+      escalationAlert.innerHTML = `
+        <h5><i class="bi bi-exclamation-triangle-fill me-2"></i>Escalated Bill</h5>
+        <p class="mb-1"><strong>Reason:</strong> ${jsonDetails.escalation_message}</p>
+        <p class="mb-0"><small>Escalated on: ${formattedDate}</small></p>
+      `;
+      
+      // Insert at the top
+      hcfaDetails.insertBefore(escalationAlert, hcfaDetails.firstChild);
     }
-    
+  }
+};
+
+// Update resolveBill function to handle escalated files
+const originalResolveBill = resolveBill;
+
+resolveBill = function(failure) {
+  // Check if we're on the escalations page
+  const isEscalationsPage = window.location.pathname.includes('/escalations');
+  
+  if (isEscalationsPage) {
     try {
-        showLoading();
-        const filename = failure.filename;
-        
-        const response = await fetch(`/api/failures/${filename}/resolve`, {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json'
-            }
-        });
-        
-        if (!response.ok) {
-            const errorData = await response.json();
-            throw new Error(errorData.message || `HTTP error! status: ${response.status}`);
+      showLoading();
+      const filename = failure.filename;
+      
+      fetch(`/api/escalations/${filename}/resolve`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json'
         }
-        
-        const result = await response.json();
-        
-        showSuccess('Bill has been resolved and moved to staging');
+      })
+      .then(response => {
+        if (!response.ok) {
+          return response.json().then(data => {
+            throw new Error(data.message || `HTTP error! status: ${response.status}`);
+          });
+        }
+        return response.json();
+      })
+      .then(result => {
+        showSuccess('Escalated bill has been resolved and moved to staging');
         
         // Remove the failure from the document list
         const failureElement = document.querySelector(`.document-item[data-filename="${filename}"]`);
         if (failureElement) {
-            failureElement.remove();
+          failureElement.remove();
         }
         
         // Clear the details panels
@@ -637,14 +666,24 @@ async function resolveBill(failure) {
         
         // Remove from currentDocument
         currentDocument = null;
-        
-    } catch (error) {
-        console.error('Error resolving bill:', error);
-        showError(`Failed to resolve bill: ${error.message}`);
-    } finally {
+      })
+      .catch(error => {
+        console.error('Error resolving escalated bill:', error);
+        showError(`Failed to resolve escalated bill: ${error.message}`);
+      })
+      .finally(() => {
         hideLoading();
+      });
+    } catch (error) {
+      console.error('Error resolving escalated bill:', error);
+      showError(`Failed to resolve escalated bill: ${error.message}`);
+      hideLoading();
     }
-}
+  } else {
+    // Use the original function for normal failures
+    originalResolveBill(failure);
+  }
+};
 
 /**
  * Escalate a bill to a separate directory

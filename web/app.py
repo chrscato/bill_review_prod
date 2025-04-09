@@ -247,6 +247,11 @@ def index():
     """Render the main page."""
     return render_template('index.html')
 
+@app.route('/escalations')
+def escalations():
+    """Render the escalations page."""
+    return render_template('escalations.html')
+
 @app.route('/unauthorized')
 def unauthorized_services():
     """Render the unauthorized services page."""
@@ -748,6 +753,132 @@ def escalate_failure(filename):
     except Exception as e:
         logger.error(f"Error escalating failure {filename}: {str(e)}")
         return jsonify({'success': False, 'error': str(e)}), 500
+
+@app.route('/api/escalations')
+def get_escalations():
+    """API endpoint to get all escalated files with filtering options."""
+    try:
+        # Get query parameters
+        filter_type = request.args.get('filter', 'all')
+        
+        # Get all escalated files
+        escalated_files = []
+        escalation_dir = Path(app.config['ESCALATE_PATH'])
+        
+        for file_path in escalation_dir.glob('*.json'):
+            try:
+                with open(file_path, 'r', encoding='utf-8') as f:
+                    data = json.load(f)
+                    
+                # Add file info
+                data['filename'] = file_path.name
+                data['order_id'] = data.get('Order_ID', '')
+                
+                escalated_files.append(data)
+                
+            except Exception as e:
+                logger.error(f"Error processing escalated file {file_path}: {e}")
+                continue
+        
+        # Apply filtering based on type (same as normal failures)
+        if filter_type == 'unauthorized':
+            escalated_files = [f for f in escalated_files if _is_unauthorized_service(f)]
+        elif filter_type == 'component':
+            escalated_files = [f for f in escalated_files if _has_component_modifiers(f)]
+        elif filter_type == 'rate':
+            escalated_files = [f for f in escalated_files if _has_rate_issue(f)]
+        
+        # Sort by escalation date (newest first)
+        escalated_files.sort(key=lambda x: x.get('escalated_at', ''), reverse=True)
+        
+        return jsonify({
+            'status': 'success',
+            'data': escalated_files
+        })
+    except Exception as e:
+        logger.error(f"Error getting escalations: {str(e)}")
+        return jsonify({
+            'status': 'error',
+            'message': str(e)
+        }), 500
+
+@app.route('/api/escalations/<filename>/resolve', methods=['POST'])
+def resolve_escalation(filename):
+    """API endpoint to mark an escalated bill as resolved and move it back to staging."""
+    try:
+        logger.info(f"Resolving escalated bill: {filename}")
+        
+        # Construct paths
+        escalation_path = os.path.join(app.config['ESCALATE_PATH'], filename)
+        staging_path = os.path.join(app.config['JSON_PATH'], filename)
+        
+        if not os.path.exists(escalation_path):
+            logger.error(f"Escalated file not found: {escalation_path}")
+            return jsonify({
+                'status': 'error',
+                'message': f'File not found: {filename}'
+            }), 404
+            
+        # Read the escalated file
+        with open(escalation_path, 'r') as f:
+            data = json.load(f)
+            
+        # Remove escalation-specific fields
+        if 'escalated_at' in data:
+            del data['escalated_at']
+        if 'escalation_message' in data:
+            del data['escalation_message']
+            
+        # Remove validation messages to treat as resolved
+        if 'validation_messages' in data:
+            del data['validation_messages']
+            
+        # Write the modified data to the staging directory
+        with open(staging_path, 'w') as f:
+            json.dump(data, f, indent=2)
+            
+        # Remove the file from the escalations directory
+        os.remove(escalation_path)
+            
+        logger.info(f"Successfully resolved escalated bill: {filename}")
+        return jsonify({
+            'status': 'success',
+            'message': 'Escalated bill resolved successfully'
+        })
+        
+    except Exception as e:
+        logger.error(f"Error resolving escalated bill: {str(e)}")
+        return jsonify({
+            'status': 'error',
+            'message': str(e)
+        }), 500
+
+@app.route('/api/escalations/<filename>')
+def get_escalation(filename):
+    """API endpoint to get a specific escalated file."""
+    try:
+        escalation_path = os.path.join(app.config['ESCALATE_PATH'], filename)
+        
+        if not os.path.exists(escalation_path):
+            logger.error(f"Escalated file not found: {escalation_path}")
+            return jsonify({
+                'status': 'error',
+                'message': f'File not found: {filename}'
+            }), 404
+            
+        with open(escalation_path, 'r') as f:
+            data = json.load(f)
+            
+        return jsonify({
+            'status': 'success',
+            'data': data
+        })
+    except Exception as e:
+        logger.error(f"Error getting escalation: {str(e)}")
+        return jsonify({
+            'status': 'error',
+            'message': str(e)
+        }), 500
 
 if __name__ == '__main__':
     app.run(debug=True) 

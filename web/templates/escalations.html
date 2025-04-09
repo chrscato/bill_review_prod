@@ -1,0 +1,487 @@
+{% extends "base.html" %}
+
+{% block title %}Escalations - Bill Review System{% endblock %}
+
+{% block page_header %}Escalated Bills{% endblock %}
+
+{% block page_description %}Review bills that have been escalated for further attention{% endblock %}
+
+{% block body_class %}escalations-page{% endblock %}
+
+{% block header_controls %}
+<input type="text" id="searchInput" class="form-control form-control-sm" placeholder="Search...">
+<select id="statusFilter" class="form-select form-select-sm">
+    <option value="all">All Types</option>
+</select>
+{% endblock %}
+
+{% block content %}
+<div class="row g-0" style="height: calc(100vh - 100px);">
+    <!-- Document List -->
+    <div class="col-md-2 border-end">
+        <div class="h-100 d-flex flex-column">
+            <div class="p-2 border-bottom">
+                <h6 class="mb-0 small">Escalated Files</h6>
+            </div>
+            <div id="documentList" class="document-list">
+                <!-- Document items will be inserted here -->
+            </div>
+        </div>
+    </div>
+
+    <!-- Details Panels -->
+    <div class="col-md-10">
+        <div class="row g-0 h-100">
+            <!-- Provider Bill (JSON) Panel -->
+            <div class="col-md-6 border-end">
+                <div class="h-100 d-flex flex-column">
+                    <div class="p-3 border-bottom bg-light">
+                        <h6 class="mb-0 text-primary">Provider Bill</h6>
+                    </div>
+                    <div id="hcfaDetails" class="flex-grow-1 overflow-auto p-3">
+                        <!-- HCFA details will be inserted here -->
+                    </div>
+                </div>
+            </div>
+
+            <!-- FileMaker (Database) Panel -->
+            <div class="col-md-6">
+                <div class="h-100 d-flex flex-column">
+                    <div class="p-3 border-bottom bg-light">
+                        <h6 class="mb-0 text-success">FileMaker</h6>
+                    </div>
+                    <div id="dbDetails" class="flex-grow-1 overflow-auto p-3">
+                        <!-- Database details will be inserted here -->
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Rate Correction Modal -->
+<div class="modal fade" id="rateCorrectionModal" tabindex="-1" aria-labelledby="rateCorrectionModalLabel" aria-hidden="true">
+    <div class="modal-dialog modal-lg">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title" id="rateCorrectionModalLabel">Fix Rate Issues</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body">
+                <!-- Provider Information -->
+                <div class="provider-info mb-3">
+                    <h6>Provider Information</h6>
+                    <div class="row">
+                        <div class="col-md-4">
+                            <p><strong>TIN:</strong> <span id="provider-tin"></span></p>
+                        </div>
+                        <div class="col-md-4">
+                            <p><strong>Name:</strong> <span id="provider-name"></span></p>
+                        </div>
+                        <div class="col-md-4">
+                            <p><strong>Network:</strong> <span id="provider-network"></span></p>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Tabs for correction methods -->
+                <ul class="nav nav-tabs" id="correctionTabs" role="tablist">
+                    <li class="nav-item" role="presentation">
+                        <button class="nav-link active" id="line-item-tab" data-bs-toggle="tab" data-bs-target="#line-item-correction" type="button" role="tab">Line Item Correction</button>
+                    </li>
+                    <li class="nav-item" role="presentation">
+                        <button class="nav-link" id="category-tab" data-bs-toggle="tab" data-bs-target="#category-correction" type="button" role="tab">Category Correction</button>
+                    </li>
+                </ul>
+
+                <!-- Tab content -->
+                <div class="tab-content mt-3" id="correctionTabContent">
+                    <!-- Line Item Correction -->
+                    <div class="tab-pane fade show active" id="line-item-correction" role="tabpanel">
+                        <div class="alert alert-info">Enter rates for individual CPT codes</div>
+                        <div class="table-responsive">
+                            <table class="table table-striped" id="line-items-table">
+                                <thead>
+                                    <tr>
+                                        <th>CPT Code</th>
+                                        <th>Description</th>
+                                        <th>Current Rate</th>
+                                        <th>New Rate</th>
+                                        <th>Procedure Category</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="line-items-body">
+                                    <!-- Will be populated dynamically -->
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+
+                    <!-- Category Correction -->
+                    <div class="tab-pane fade" id="category-correction" role="tabpanel">
+                        <div class="alert alert-info">Set rates by category to update multiple CPT codes at once</div>
+                        <div class="table-responsive">
+                            <table class="table table-striped" id="category-table">
+                                <thead>
+                                    <tr>
+                                        <th>Category</th>
+                                        <th>CPT Codes</th>
+                                        <th>Rate</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="category-body">
+                                    <!-- Will be populated dynamically -->
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                <button type="button" class="btn btn-primary" id="save-rate-corrections">Save Corrections</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- OTA Correction Modal -->
+<div class="modal fade" id="otaCorrectionModal" tabindex="-1" aria-labelledby="otaCorrectionModalLabel" aria-hidden="true">
+    <div class="modal-dialog modal-lg">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title" id="otaCorrectionModalLabel">Add OTA Rates</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body">
+                <!-- Provider Information -->
+                <div class="provider-info mb-3">
+                    <h6>Provider Information</h6>
+                    <div class="row">
+                        <div class="col-md-6">
+                            <p><strong>Provider:</strong> <span id="provider-name-ota"></span></p>
+                        </div>
+                        <div class="col-md-6">
+                            <p><strong>Network Status:</strong> <span id="provider-network-ota"></span></p>
+                        </div>
+                    </div>
+                    <div class="row">
+                        <div class="col-md-12">
+                            <p><strong>Order ID:</strong> <span id="order-id-ota"></span></p>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="alert alert-info">
+                    Enter OTA (One Time Agreement) rates for this out-of-network provider.
+                </div>
+
+                <div class="table-responsive">
+                    <table class="table table-striped" id="ota-items-table">
+                        <thead>
+                            <tr>
+                                <th>CPT Code</th>
+                                <th>Description</th>
+                                <th>Modifier</th>
+                                <th>Current Rate</th>
+                                <th>OTA Rate</th>
+                            </tr>
+                        </thead>
+                        <tbody id="ota-items-body">
+                            <!-- Will be populated dynamically -->
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                <button type="button" class="btn btn-primary" id="save-ota-corrections">Save OTA Rates</button>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_scripts %}
+<!-- Load our escalations code before main.js -->
+<script>
+  // Initialize global variables
+  window.currentDocument = null;
+  window.allFailures = [];
+  window.uniqueFailureTypes = new Set();
+
+  // Function to load escalations
+  function loadEscalations(filterType = 'all') {
+    try {
+      showLoading();
+      const url = filterType === 'all' ? 
+          '/api/escalations' : 
+          `/api/escalations?filter=${filterType}`;
+          
+      console.log('Fetching escalations from:', url);
+      
+      fetch(url)
+        .then(response => {
+          if (!response.ok) {
+            throw new Error('Failed to fetch escalations');
+          }
+          return response.json();
+        })
+        .then(result => {
+          console.log('API Response:', {
+            status: result.status,
+            dataLength: result.data ? result.data.length : 0,
+            firstItem: result.data && result.data.length > 0 ? result.data[0] : null
+          });
+          
+          if (result.status !== 'success') {
+            throw new Error(`Failed to load escalations: ${result.message}`);
+          }
+          
+          // Store all escalations
+          window.allFailures = result.data;
+          console.log('Stored escalations:', {
+            totalEscalations: window.allFailures.length,
+            sampleEscalation: window.allFailures.length > 0 ? {
+              filename: window.allFailures[0].filename,
+              hasValidationMessages: Boolean(window.allFailures[0].validation_messages),
+              validationMessages: window.allFailures[0].validation_messages
+            } : null
+          });
+          
+          // Extract unique failure types
+          window.uniqueFailureTypes.clear();
+          window.allFailures.forEach(failure => {
+            const types = extractFailureTypes(failure);
+            types.forEach(type => window.uniqueFailureTypes.add(type));
+          });
+          console.log('Unique failure types:', Array.from(window.uniqueFailureTypes));
+          
+          // Update status filter dropdown based on the page type
+          updateStatusFilter(window.allFailures, filterType);
+          
+          // Apply current filter
+          const statusFilter = document.getElementById('statusFilter');
+          const filteredFailures = filterFailuresByStatus(window.allFailures, statusFilter.value);
+          console.log('Filtered escalations:', {
+            filterType: statusFilter.value,
+            totalFiltered: filteredFailures.length
+          });
+          
+          // Display filtered failures
+          displayFailures(filteredFailures);
+        })
+        .catch(error => {
+          console.error('Error loading escalations:', error);
+          showError('Failed to load escalations');
+        })
+        .finally(() => {
+          hideLoading();
+        });
+    } catch (error) {
+      console.error('Error loading escalations:', error);
+      showError('Failed to load escalations');
+      hideLoading();
+    }
+  }
+  
+  // Function to resolve an escalated bill
+  function resolveEscalatedBill(failure) {
+    if (!failure || !failure.filename) {
+      showError('Invalid failure data');
+      return;
+    }
+    
+    try {
+      showLoading();
+      const filename = failure.filename;
+      
+      fetch(`/api/escalations/${filename}/resolve`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json'
+        }
+      })
+      .then(response => {
+        if (!response.ok) {
+          return response.json().then(data => {
+            throw new Error(data.message || `HTTP error! status: ${response.status}`);
+          });
+        }
+        return response.json();
+      })
+      .then(result => {
+        showSuccess('Escalated bill has been resolved and moved to staging');
+        
+        // Remove the failure from the document list
+        const failureElement = document.querySelector(`.document-item[data-filename="${filename}"]`);
+        if (failureElement) {
+          failureElement.remove();
+        }
+        
+        // Clear the details panels
+        document.getElementById('hcfaDetails').innerHTML = '<div class="alert alert-success">Bill has been resolved and moved to staging.</div>';
+        document.getElementById('dbDetails').innerHTML = '';
+        
+        // Remove from currentDocument
+        window.currentDocument = null;
+      })
+      .catch(error => {
+        console.error('Error resolving escalated bill:', error);
+        showError(`Failed to resolve escalated bill: ${error.message}`);
+      })
+      .finally(() => {
+        hideLoading();
+      });
+    } catch (error) {
+      console.error('Error resolving escalated bill:', error);
+      showError(`Failed to resolve escalated bill: ${error.message}`);
+      hideLoading();
+    }
+  }
+
+  // Override functions that will be used by main.js
+  window.loadFailures = loadEscalations;
+  window.resolveBill = resolveEscalatedBill;
+
+  window.selectDocument = async function(doc) {
+    try {
+      showLoading();
+      window.currentDocument = doc;
+      
+      // Update active state in document list
+      document.querySelectorAll('.document-item').forEach(item => {
+        item.classList.remove('active');
+      });
+      event.currentTarget.classList.add('active');
+      
+      // Fetch document details
+      const [jsonResponse, dbResponse] = await Promise.all([
+        fetch(`/api/escalations/${doc.filename}`),
+        fetch(`/api/order/${doc.order_id}`)
+      ]);
+      
+      if (!jsonResponse.ok) {
+        throw new Error('Failed to fetch document details');
+      }
+      
+      const jsonResult = await jsonResponse.json();
+      if (jsonResult.status !== 'success') {
+        throw new Error(`Failed to load JSON details: ${jsonResult.message}`);
+      }
+      
+      let dbData = null;
+      if (dbResponse.ok) {
+        const dbResult = await dbResponse.json();
+        if (dbResult.status === 'success') {
+          dbData = dbResult.data;
+        } else {
+          console.warn(`Database details not available: ${dbResult.message}`);
+        }
+      } else {
+        console.warn('Failed to load database details');
+      }
+      
+      // Display the details
+      displayDetails(jsonResult.data, dbData);
+      
+      // Wait a short moment to ensure all scripts are loaded
+      setTimeout(() => {
+        // Create a button container div
+        const buttonContainer = document.createElement('div');
+        buttonContainer.className = 'd-flex gap-2 mt-3';
+        buttonContainer.id = 'action-buttons';
+        
+        // Add rate correction buttons based on provider network
+        if (dbData && dbData.provider_details) {
+          const network = dbData.provider_details.provider_network?.toLowerCase() || '';
+          
+          if (network.includes('out of network')) {
+            // Add OTA button for out of network
+            const otaButton = document.createElement('button');
+            otaButton.className = 'btn btn-warning';
+            otaButton.id = 'add-ota-button';
+            otaButton.innerHTML = '<i class="bi bi-file-earmark-text me-1"></i>OON Add OTA Rates';
+            otaButton.onclick = function() {
+              showOTACorrectionModal(jsonResult.data, dbData);
+            };
+            buttonContainer.appendChild(otaButton);
+          } else if (network.includes('in network')) {
+            // Add INN rate button for in network
+            const innButton = document.createElement('button');
+            innButton.className = 'btn btn-primary';
+            innButton.id = 'fix-inn-rate-button';
+            innButton.innerHTML = '<i class="bi bi-cash me-1"></i>INN Rate Correction';
+            innButton.onclick = function() {
+              showRateCorrectionModal(jsonResult.data, dbData);
+            };
+            buttonContainer.appendChild(innButton);
+          }
+        }
+        
+        // Add the Bill Resolved button for escalations
+        const resolveButton = document.createElement('button');
+        resolveButton.className = 'btn btn-success';
+        resolveButton.id = 'resolve-bill-button';
+        resolveButton.innerHTML = '<i class="bi bi-check-circle me-1"></i>Bill Resolved';
+        resolveButton.onclick = function() {
+          if (confirm('Are you sure you want to mark this bill as resolved? This will move the file back to staging.')) {
+            resolveEscalatedBill({
+              filename: doc.filename
+            });
+          }
+        };
+        buttonContainer.appendChild(resolveButton);
+        
+        // Add the button container after validation messages
+        const messagesElement = document.getElementById('hcfaDetails').querySelector('.card-body');
+        if (messagesElement) {
+          messagesElement.appendChild(buttonContainer);
+        }
+        
+        // Add the escalation message at the top if present
+        if (jsonResult.data.escalation_message && jsonResult.data.escalated_at) {
+          const hcfaDetails = document.getElementById('hcfaDetails');
+          if (hcfaDetails) {
+            // Remove any existing escalation message
+            const existingAlert = hcfaDetails.querySelector('.alert-danger');
+            if (existingAlert) {
+              existingAlert.remove();
+            }
+            
+            // Format the date
+            const escalatedDate = new Date(jsonResult.data.escalated_at);
+            const formattedDate = escalatedDate.toLocaleString();
+            
+            // Create escalation message alert
+            const escalationAlert = document.createElement('div');
+            escalationAlert.className = 'alert alert-danger mb-4';
+            escalationAlert.innerHTML = `
+              <h5><i class="bi bi-exclamation-triangle-fill me-2"></i>Escalated Bill</h5>
+              <p class="mb-1"><strong>Reason:</strong> ${jsonResult.data.escalation_message}</p>
+              <p class="mb-0"><small>Escalated on: ${formattedDate}</small></p>
+            `;
+            
+            // Insert at the top
+            hcfaDetails.insertBefore(escalationAlert, hcfaDetails.firstChild);
+          }
+        }
+      }, 100);
+      
+    } catch (error) {
+      console.error('Error selecting document:', error);
+      showError('Failed to load document details');
+    } finally {
+      hideLoading();
+    }
+  };
+
+  // Initialize the page
+  console.log('Initializing escalations page...');
+  loadEscalations();
+</script>
+
+<!-- Load main.js after our overrides -->
+<script src="{{ url_for('static', filename='js/main.js') }}"></script>
+<script src="{{ url_for('static', filename='js/theme.js') }}"></script>
+{% endblock %} 
