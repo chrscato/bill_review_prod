@@ -481,7 +481,10 @@
   loadEscalations();
 </script>
 
-<!-- Load main.js after our overrides -->
+<!-- Load rate correction and OTA scripts -->
+<script src="{{ url_for('static', filename='js/rate_correction.js') }}"></script>
+<script src="{{ url_for('static', filename='js/ota_correction.js') }}"></script>
+
+<!-- Load main.js last -->
 <script src="{{ url_for('static', filename='js/main.js') }}"></script>
-<script src="{{ url_for('static', filename='js/theme.js') }}"></script>
 {% endblock %} 

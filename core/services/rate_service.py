@@ -13,53 +13,28 @@ class RateService:
     
     # CPT code categories mapping - must match JavaScript categories
     PROCEDURE_CATEGORIES = {
-        "MRI w/o": [
-            "70551", "72141", "73721", "73718", "70540", "72195", 
-            "72146", "73221", "73218"
-        ],
-        "MRI w/": [
-            "70552", "72142", "73722", "70542", "72196", 
-            "72147", "73222", "73219"
-        ],
-        "MRI w/&w/o": [
-            "70553", "72156", "73723", "70543", "72197", 
-            "72157", "73223", "73220"
-        ],
-        "CT w/o": [
-            "74176", "74150", "72125", "70450", "73700", 
-            "72131", "70486", "70480", "72192", "70490", 
-            "72128", "71250", "73200"
-        ],
-        "CT w/": [
-            "74177", "74160", "72126", "70460", "73701", 
-            "72132", "70487", "70481", "72193", "70491", 
-            "72129", "71260", "73201"
-        ],
-        "CT w/&w/o": [
-            "74178", "74170", "72127", "70470", "73702", 
-            "72133", "70488", "70482", "72194", "70492", 
-            "72130", "71270", "73202"
-        ],
-        "Xray": [
-            "74010", "74000", "74020", "76080", "73050", 
-            "73600", "73610", "77072", "77073", "73650", 
-            "72040", "72050", "71010", "71021", "71023", 
-            "71022", "71020", "71030", "71034", "71035", "73130"
-        ],
-        "Ultrasound": [
-            "76700", "76705", "76770", "76775", "76536",
-            "76604", "76642", "76856", "76857", "76870"
-        ]
+        "MRI w/o": [],
+        "MRI w/": [],
+        "MRI w/&w/o": [],
+        "CT w/o": [],
+        "CT w/": [],
+        "CT w/&w/o": [],
+        "Xray": [],
+        "Ultrasound": [],
+        "ancillary": [],
+        "EMG": [],
+        "E&M": []
     }
     
-    def __init__(self, db_path: Union[str, Path]):
+    def __init__(self, db_path: str):
         """
-        Initialize the rate service with a database path.
+        Initialize the rate service.
         
         Args:
             db_path: Path to the SQLite database
         """
-        self.db_path = Path(db_path)
+        self.db_path = db_path
+        self._update_categories_from_dim_proc()
         
         # Set up logging if not already configured
         if not logger.handlers:
@@ -70,12 +45,64 @@ class RateService:
             logger.setLevel(logging.INFO)
         
         # Verify database exists
-        if not self.db_path.exists():
-            logger.error(f"Database file not found: {self.db_path}")
-            raise FileNotFoundError(f"Database file not found: {self.db_path}")
+        if not Path(db_path).exists():
+            logger.error(f"Database file not found: {db_path}")
+            raise FileNotFoundError(f"Database file not found: {db_path}")
             
         # Verify ppo table exists
         self._verify_ppo_table()
+    
+    def _update_categories_from_dim_proc(self):
+        """
+        Update procedure categories from dim_proc table.
+        This ensures our categories stay in sync with the database.
+        """
+        try:
+            with sqlite3.connect(self.db_path) as conn:
+                conn.row_factory = sqlite3.Row
+                cursor = conn.cursor()
+                
+                # Get all procedure codes and their categories
+                cursor.execute("""
+                    SELECT proc_cd, proc_category 
+                    FROM dim_proc 
+                    WHERE proc_category IS NOT NULL 
+                    AND proc_category != ''
+                """)
+                
+                # Reset categories
+                for category in self.PROCEDURE_CATEGORIES:
+                    self.PROCEDURE_CATEGORIES[category] = []
+                
+                # Create a case-insensitive mapping of our categories
+                category_map = {cat.lower(): cat for cat in self.PROCEDURE_CATEGORIES}
+                
+                # Populate categories from dim_proc
+                for row in cursor.fetchall():
+                    proc_cd = row['proc_cd']
+                    proc_category = row['proc_category']
+                    
+                    # Convert to lowercase for comparison
+                    proc_category_lower = proc_category.lower()
+                    
+                    # Map dim_proc categories to our categories
+                    if proc_category_lower in category_map:
+                        # Use the original case from our categories
+                        mapped_category = category_map[proc_category_lower]
+                        self.PROCEDURE_CATEGORIES[mapped_category].append(proc_cd)
+                    else:
+                        # Log any unmapped categories
+                        logger.warning(f"Unmapped category in dim_proc: {proc_category} for CPT {proc_cd}")
+                
+                # Log the updated categories
+                logger.info("Updated procedure categories from dim_proc:")
+                for category, codes in self.PROCEDURE_CATEGORIES.items():
+                    logger.info(f"{category}: {len(codes)} codes")
+                    
+        except sqlite3.Error as e:
+            logger.error(f"Error updating categories from dim_proc: {e}")
+            # Keep existing categories if update fails
+            logger.warning("Using existing procedure categories due to update failure")
     
     def _verify_ppo_table(self):
         """

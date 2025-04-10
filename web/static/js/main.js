@@ -625,65 +625,58 @@ displayDetails = function(jsonDetails, dbDetails) {
   }
 };
 
-// Update resolveBill function to handle escalated files
-const originalResolveBill = resolveBill;
-
-resolveBill = function(failure) {
-  // Check if we're on the escalations page
-  const isEscalationsPage = window.location.pathname.includes('/escalations');
-  
-  if (isEscalationsPage) {
+/**
+ * Mark a bill as resolved and move it back to staging
+ * @param {Object} failure - The failure data object
+ */
+async function resolveBill(failure) {
     try {
-      showLoading();
-      const filename = failure.filename;
-      
-      fetch(`/api/escalations/${filename}/resolve`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json'
-        }
-      })
-      .then(response => {
-        if (!response.ok) {
-          return response.json().then(data => {
-            throw new Error(data.message || `HTTP error! status: ${response.status}`);
-          });
-        }
-        return response.json();
-      })
-      .then(result => {
-        showSuccess('Escalated bill has been resolved and moved to staging');
+        showLoading();
+        const filename = failure.filename;
         
-        // Remove the failure from the document list
-        const failureElement = document.querySelector(`.document-item[data-filename="${filename}"]`);
-        if (failureElement) {
-          failureElement.remove();
-        }
-        
-        // Clear the details panels
-        document.getElementById('hcfaDetails').innerHTML = '<div class="alert alert-success">Bill has been resolved and moved to staging.</div>';
-        document.getElementById('dbDetails').innerHTML = '';
-        
-        // Remove from currentDocument
-        currentDocument = null;
-      })
-      .catch(error => {
-        console.error('Error resolving escalated bill:', error);
-        showError(`Failed to resolve escalated bill: ${error.message}`);
-      })
-      .finally(() => {
-        hideLoading();
-      });
+        fetch(`/api/failures/${filename}/resolve`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json'
+            }
+        })
+        .then(response => {
+            if (!response.ok) {
+                return response.json().then(data => {
+                    throw new Error(data.message || `HTTP error! status: ${response.status}`);
+                });
+            }
+            return response.json();
+        })
+        .then(result => {
+            showSuccess('Bill has been resolved and moved to staging');
+            
+            // Remove the failure from the document list
+            const failureElement = document.querySelector(`.document-item[data-filename="${filename}"]`);
+            if (failureElement) {
+                failureElement.remove();
+            }
+            
+            // Clear the details panels
+            document.getElementById('hcfaDetails').innerHTML = '<div class="alert alert-success">Bill has been resolved and moved to staging.</div>';
+            document.getElementById('dbDetails').innerHTML = '';
+            
+            // Remove from currentDocument
+            currentDocument = null;
+        })
+        .catch(error => {
+            console.error('Error resolving bill:', error);
+            showError(`Failed to resolve bill: ${error.message}`);
+        })
+        .finally(() => {
+            hideLoading();
+        });
     } catch (error) {
-      console.error('Error resolving escalated bill:', error);
-      showError(`Failed to resolve escalated bill: ${error.message}`);
-      hideLoading();
+        console.error('Error resolving bill:', error);
+        showError(`Failed to resolve bill: ${error.message}`);
+        hideLoading();
     }
-  } else {
-    // Use the original function for normal failures
-    originalResolveBill(failure);
-  }
-};
+}
 
 /**
  * Escalate a bill to a separate directory
@@ -713,50 +706,46 @@ async function escalateBill(failureData) {
     if (loadingIndicator) loadingIndicator.style.display = 'block';
     if (escalateButton) escalateButton.disabled = true;
 
-    // Make the API call to escalate the bill
-    fetch(`/api/failures/${filename}/escalate`, {
-        method: 'POST',
-        headers: {
-            'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({ message: message })
-    })
-    .then(response => {
+    try {
+        // Make the API call to escalate the bill
+        const response = await fetch(`/api/failures/${filename}/escalate`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({ message: message })
+        });
+
         if (response.status === 404) {
             throw new Error('This bill has already been escalated or moved.');
         }
         if (!response.ok) {
             throw new Error(`HTTP error! status: ${response.status}`);
         }
-        return response.json();
-    })
-    .then(data => {
-        if (data.success) {
-            // Remove the failure from the document list
-            const documentList = document.getElementById('document-list');
-            const listItem = document.querySelector(`li[data-filename="${filename}"]`);
-            if (listItem) {
-                documentList.removeChild(listItem);
-            }
 
-            // Clear the details panels
-            clearDetailsPanels();
-
-            // Show success message
-            alert('Bill has been escalated');
-        } else {
+        const data = await response.json();
+        if (!data.success) {
             throw new Error(data.error || 'Failed to escalate bill');
         }
-    })
-    .catch(error => {
+
+        // Clear the details panels
+        clearDetailsPanels();
+
+        // Show success message
+        showSuccess('Bill has been escalated');
+
+        // Reload the failures list to reflect the changes
+        const statusFilter = document.getElementById('statusFilter');
+        await loadFailures(statusFilter ? statusFilter.value : 'all');
+
+    } catch (error) {
         console.error('Error escalating bill:', error);
-        alert('Error escalating bill: ' + error.message);
-    })
-    .finally(() => {
+        showError('Error escalating bill: ' + error.message);
+    } finally {
         // Hide loading indicators
         if (loadingIndicator) loadingIndicator.style.display = 'none';
         if (escalateButton) escalateButton.disabled = false;
-    });
+    }
 }
 
 // Setup event listeners

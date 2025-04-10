@@ -10,17 +10,24 @@ class RateValidator:
     Enhanced rate validator with bundle awareness and clinical equivalence support.
     """
     
-    def __init__(self, conn: sqlite3.Connection, bundle_rates_path: Optional[str] = None):
+    def __init__(self, conn: sqlite3.Connection, bundle_rates_path: Optional[str] = None, quiet: bool = False):
         """
         Initialize the rate validator.
         
         Args:
             conn: SQLite database connection
             bundle_rates_path: Path to bundle rates config (optional)
+            quiet: If True, suppress non-critical log output
         """
         self.conn = conn
         self.bundle_rates = {}
         self.logger = logging.getLogger(__name__)
+        
+        # Set logging level higher if quiet mode is enabled
+        if quiet:
+            self.logger.setLevel(logging.ERROR)
+        else:
+            self.logger.setLevel(logging.INFO)
         
         # Load bundle rates if provided
         if bundle_rates_path:
@@ -34,8 +41,8 @@ class RateValidator:
         try:
             with open(Path(config_path), 'r') as f:
                 self.bundle_rates = json.load(f)
-        except (FileNotFoundError, json.JSONDecodeError):
-            print(f"Warning: Could not load bundle rates from {config_path}")
+        except (FileNotFoundError, json.JSONDecodeError) as e:
+            self.logger.warning(f"Could not load bundle rates from {config_path}: {str(e)}")
             self.bundle_rates = {}
     
     def get_bundle_rate(self, 
@@ -255,7 +262,31 @@ class RateValidator:
         """
         cpt = str(line.get('cpt', ''))
         units = safe_int(line.get('units', 1))
-        modifier = line.get('modifier', '')  # Get modifier from line item
+        
+        # Get modifier from line item, handling both string and list formats
+        raw_modifier = line.get('modifier', '')
+        
+        # Handle case where modifier could be a string, list, or comma-separated string
+        if isinstance(raw_modifier, list):
+            modifiers = raw_modifier
+        elif isinstance(raw_modifier, str) and ',' in raw_modifier:
+            modifiers = [m.strip() for m in raw_modifier.split(',')]
+        else:
+            modifiers = [raw_modifier] if raw_modifier else []
+            
+        # Extract TC or 26 modifiers for rate lookups (prioritize these)
+        target_modifier = None
+        for mod in modifiers:
+            if mod in ['26', 'TC']:
+                target_modifier = mod
+                self.logger.info(f"Found target modifier '{mod}' for CPT {cpt}")
+                break
+                
+        # Use the target modifier if found, otherwise use empty string
+        modifier = target_modifier or ''
+        
+        if modifiers:
+            self.logger.info(f"Processing CPT {cpt} with modifiers: {modifiers}, using '{modifier}' for rate lookup")
         
         # Default values if validation fails
         base_rate = None
@@ -303,7 +334,7 @@ class RateValidator:
             return result
             
         # Try OTA Rate next
-        ota_rate = self._get_ota_rate(line.get('order_id', ''), cpt)
+        ota_rate = self._get_ota_rate(line.get('order_id', ''), cpt, modifier)
         
         if ota_rate is not None:
             base_rate = float(ota_rate)
@@ -325,7 +356,7 @@ class RateValidator:
             return result
             
         # Try equivalent codes for rate
-        equivalent_rate = self._get_equivalent_code_rate(provider_tin, cpt)
+        equivalent_rate = self._get_equivalent_code_rate(provider_tin, cpt, modifier)
         
         if equivalent_rate is not None:
             base_rate = float(equivalent_rate['rate'])
@@ -351,7 +382,15 @@ class RateValidator:
         failure_message = f"No rate found for CPT {cpt}"
         if modifier in ['26', 'TC']:
             failure_message += f" with modifier {modifier}"
+        
+        # Include information about modifiers in the failure message
+        if modifiers:
+            original_modifiers = ", ".join(modifiers)
+            failure_message += f" with modifiers [{original_modifiers}]"
             
+            if target_modifier:
+                failure_message += f" (used {target_modifier} for rate lookup)"
+        
         result = {
             **line, 
             "validated_rate": None, 
@@ -460,22 +499,68 @@ class RateValidator:
             
             return None
     
-    def _get_ota_rate(self, order_id: str, cpt_code: str) -> Optional[float]:
-        """Get OTA rate for an order and CPT code."""
-        query = "SELECT rate FROM current_otas WHERE ID_Order_PrimaryKey = ? AND CPT = ?"
-        result = pd.read_sql_query(query, self.conn, params=[order_id, cpt_code])
+    def _get_ota_rate(self, order_id: str, cpt_code: str, modifier: Optional[str] = None) -> Optional[float]:
+        """
+        Get OTA rate for an order and CPT code, considering modifiers 26 and TC if present.
         
-        if not result.empty:
-            return self._clean_rate_string(result['rate'].iloc[0])
-        return None
+        Args:
+            order_id: Order ID
+            cpt_code: CPT code
+            modifier: CPT modifier (optional)
+            
+        Returns:
+            Optional[float]: Rate if found, None otherwise
+        """
+        if not order_id or not cpt_code:
+            self.logger.warning(f"Missing required parameters for OTA lookup: order_id={order_id}, cpt_code={cpt_code}")
+            return None
+            
+        self.logger.info(f"Looking up OTA rate for order={order_id}, cpt={cpt_code}, modifier={modifier}")
+        
+        # Base query for standard rate lookup
+        base_query = "SELECT rate FROM current_otas WHERE ID_Order_PrimaryKey = ? AND CPT = ?"
+        params = [order_id, cpt_code]
+        
+        # Only consider TC or 26 modifiers
+        if modifier in ['26', 'TC']:
+            # Look for specific rate with the modifier
+            query = base_query + " AND modifier = ?"
+            params.append(modifier)
+            
+            self.logger.info(f"Executing OTA query with TC/26 modifier: {query} with params {params}")
+            result = pd.read_sql_query(query, self.conn, params=params)
+            
+            if not result.empty:
+                rate = self._clean_rate_string(result['rate'].iloc[0])
+                self.logger.info(f"Found OTA rate with modifier {modifier}: {rate}")
+                return rate
+                
+            # If no rate found with modifier, return None (validation will fail)
+            self.logger.info(f"No OTA rate found with modifier {modifier}")
+            return None
+        else:
+            # For all other modifiers, ignore them and look for rate without modifier
+            query = base_query + " AND (modifier IS NULL OR modifier = '')"
+            
+            self.logger.info(f"Executing OTA query without TC/26 modifier: {query} with params {params}")
+            result = pd.read_sql_query(query, self.conn, params=params)
+            
+            if not result.empty:
+                rate = self._clean_rate_string(result['rate'].iloc[0])
+                self.logger.info(f"Found OTA rate without specific modifier: {rate}")
+                return rate
+                
+            self.logger.info("No OTA rate found without modifier")
+            return None
     
-    def _get_equivalent_code_rate(self, provider_tin: str, cpt_code: str) -> Optional[Dict]:
+    def _get_equivalent_code_rate(self, provider_tin: str, cpt_code: str, modifier: Optional[str] = None) -> Optional[Dict]:
         """
         Find rate for an equivalent code when the original code has no rate.
         
         Args:
             provider_tin: Provider TIN
             cpt_code: CPT code to find equivalent for
+            modifier: CPT modifier (optional)
             
         Returns:
             Dict with rate and equivalent code, or None if no equivalent rate found
@@ -505,7 +590,7 @@ class RateValidator:
             if equivalent_code == cpt_code:
                 continue  # Skip the original code
                 
-            rate = self._get_ppo_rate(provider_tin, equivalent_code)
+            rate = self._get_ppo_rate(provider_tin, equivalent_code, modifier)
             if rate is not None:
                 return {"code": equivalent_code, "rate": rate}
         

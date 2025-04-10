@@ -40,9 +40,11 @@ class BillReviewApplication:
     def __init__(self):
         """Initialize the Bill Review Application with required services."""
         self.db_service = DatabaseService()
+        self.db_service.clear_cache()  # Clear the cache to ensure the latest data is used
         self.reporter = ValidationReporter(Path(settings.LOG_PATH))
         self.session_id = str(uuid.uuid4())
         self.session_start_time = datetime.now()
+        self.quiet = False
         
         # Initialize validation results storage
         self.validation_results = []
@@ -50,6 +52,33 @@ class BillReviewApplication:
         # Create success and fails directories if they don't exist
         settings.SUCCESS_PATH.mkdir(exist_ok=True, parents=True)
         settings.FAILS_PATH.mkdir(exist_ok=True, parents=True)
+    
+    def _get_escalation_files(self) -> set:
+        """
+        Get a set of filenames that are in the escalation folder.
+        Creates the folder if it doesn't exist.
+        
+        Returns:
+            set: Set of filenames in the escalation folder
+        """
+        # Use the correct escalation folder path
+        escalation_path = Path(r"C:\Users\ChristopherCato\OneDrive - clarity-dx.com\Documents\Bill_Review_INTERNAL\scripts\VAILIDATION\data\extracts\valid\mapped\staging\escalations")
+        escalation_files = set()
+        
+        try:
+            # Create escalation folder if it doesn't exist
+            escalation_path.mkdir(parents=True, exist_ok=True)
+            
+            # Get list of filenames in the escalations folder
+            escalation_files = {f.name for f in escalation_path.glob('*.json')}
+            if escalation_files and hasattr(self, 'quiet') and not self.quiet:
+                print(f"Found {len(escalation_files)} files in the escalations folder.")
+        except Exception as e:
+            if hasattr(self, 'quiet') and not self.quiet:
+                print(f"Warning: Error accessing escalation folder: {str(e)}")
+            # Continue with empty set of escalation files
+        
+        return escalation_files
     
     def process_file(self, file_path: Path, validators: Dict) -> None:
         """
@@ -723,10 +752,15 @@ class BillReviewApplication:
             }
             return debug_info
 
-    def run(self):
+    def run(self, quiet: bool = False):
         """
         Main execution method to process all JSON files.
+        
+        Args:
+            quiet (bool): Whether to suppress output messages
         """
+        self.quiet = quiet
+        
         with self.db_service.connect_db() as conn:
             # Load reference data
             dim_proc_df = pd.read_sql_query("SELECT * FROM dim_proc", conn)
@@ -736,25 +770,39 @@ class BillReviewApplication:
             
             # Initialize all validators
             validators = {
-                'conn': conn,
                 'bundle': BundleValidator(settings.BUNDLE_CONFIG),
-                'intent': ClinicalIntentValidator(
-                    settings.CLINICAL_EQUIV_CONFIG, 
-                    dim_proc_df
-                ),
-                'line_items': LineItemValidator(dim_proc_df),
-                'rate': RateValidator(conn),
+                'intent': ClinicalIntentValidator(),
+                'line_items': LineItemValidator(dim_proc_df=dim_proc_df),
                 'modifier': ModifierValidator(),
-                'units': UnitsValidator(dim_proc_df)
+                'units': UnitsValidator(),
+                'rate': RateValidator(conn, quiet=self.quiet)
             }
 
-            # Find and process all JSON files
+            # Check for files in the escalations folder
+            escalation_files = self._get_escalation_files()
+            
+            # Find all JSON files in the staging folder
             json_files = list(Path(settings.JSON_PATH).glob('*.json'))
             total_files = len(json_files)
-
-            # Process each file
+            skipped_files = 0
+            
+            # Process each file, skipping those that exist in the escalations folder
             for index, json_file in enumerate(json_files, 1):
+                # Check if this file should be skipped
+                if json_file.name in escalation_files:
+                    if not quiet:
+                        print(f"Skipping {json_file.name} - already in escalations folder")
+                    skipped_files += 1
+                    continue
+                
+                # Process the file normally
                 self.process_file(json_file, validators)
+                
+            if not quiet:
+                print(f"Processed {total_files - skipped_files} files, skipped {skipped_files} files.")
+            else:
+                # Always print summary stats even in quiet mode
+                print(f"Summary: Processed {total_files - skipped_files}, skipped {skipped_files}")
 
         # Generate validation reports
         self.generate_reports()
@@ -777,58 +825,73 @@ class BillReviewApplication:
             excel_path = self.reporter.export_to_excel()
             report_paths["excel"] = excel_path
         
-        # Print only the validation summary
-        print("\nValidation Summary:")
-        print(f"Total Files: {len(self.validation_results)}")
-        print(f"Pass: {sum(1 for r in self.validation_results if r.status == 'PASS')}")
-        print(f"Fail: {sum(1 for r in self.validation_results if r.status == 'FAIL')}")
+        # Print only the validation summary - always show this regardless of quiet mode
+        pass_count = sum(1 for r in self.validation_results if r.status == 'PASS')
+        fail_count = sum(1 for r in self.validation_results if r.status == 'FAIL')
+        print(f"Validation Summary: {len(self.validation_results)} files | Pass: {pass_count} | Fail: {fail_count}")
 
-    def run_debug(self, sample_size: int = 5) -> None:
+    def run_debug(self, sample_size: int = 5, quiet: bool = False):
         """
         Run the application in debug mode on a small sample of files.
         
         Args:
             sample_size: Number of files to process in debug mode
+            quiet (bool): Whether to suppress output messages
         """
-        print(f"\nStarting debug mode with sample size: {sample_size}")
+        self.quiet = quiet
+        
+        if not quiet:
+            print(f"\nStarting debug mode with sample size: {sample_size}")
         
         # Create debug directory
         debug_dir = settings.LOG_PATH / "debug"
         debug_dir.mkdir(parents=True, exist_ok=True)
         
-        # Get list of JSON files
-        json_files = list(settings.JSON_PATH.glob("*.json"))
+        # Check for files in the escalations folder
+        escalation_files = self._get_escalation_files()
+        
+        # Get list of JSON files, excluding those in the escalations folder
+        all_json_files = list(settings.JSON_PATH.glob("*.json"))
+        json_files = [f for f in all_json_files if f.name not in escalation_files]
+        
         if not json_files:
-            print("No JSON files found to process")
+            if not quiet:
+                print("No JSON files found to process (or all files are in escalations folder)")
             return
+        
+        if not quiet:
+            print(f"Found {len(all_json_files)} files, {len(all_json_files) - len(json_files)} skipped due to escalations.")
         
         # Take a sample of files
         sample_files = random.sample(json_files, min(sample_size, len(json_files)))
         
         # Load reference data from database
-        print("\nLoading reference data...")
+        if not quiet:
+            print("\nLoading reference data...")
         try:
             with self.db_service.connect_db() as conn:
                 dim_proc_df = pd.read_sql_query("SELECT * FROM dim_proc", conn)
-                print(f"Loaded dim_proc_df with {len(dim_proc_df)} rows")
-                print(f"Columns: {list(dim_proc_df.columns)}")
-                if not dim_proc_df.empty:
-                    print(f"Sample row: {dim_proc_df.iloc[0].to_dict()}")
+                if not quiet:
+                    print(f"Loaded dim_proc_df with {len(dim_proc_df)} rows")
+                    print(f"Columns: {list(dim_proc_df.columns)}")
+                    if not dim_proc_df.empty:
+                        print(f"Sample row: {dim_proc_df.iloc[0].to_dict()}")
             
                 # Initialize validators with database connection
                 validators = {
-                    'bundle': BundleValidator(),
-                    'intent': ClinicalIntentValidator(),
+                    'bundle': BundleValidator(settings.BUNDLE_CONFIG),
+                    'intent': ClinicalIntentValidator(), 
+                    'line_items': LineItemValidator(dim_proc_df=dim_proc_df),
                     'modifier': ModifierValidator(),
-                    'units': UnitsValidator(dim_proc_df),
-                    'line_items': LineItemValidator(dim_proc_df),
-                    'rate': RateValidator(conn)  # Pass the database connection
+                    'units': UnitsValidator(),
+                    'rate': RateValidator(conn, quiet=self.quiet)  # Pass the database connection
                 }
                 
                 # Process each file
                 debug_results = []
                 for file_path in sample_files:
-                    print(f"\nProcessing file: {file_path.name}")
+                    if not quiet:
+                        print(f"\nProcessing file: {file_path.name}")
                     try:
                         debug_result = self.debug_process_file(file_path, validators)
                         debug_results.append(debug_result)
@@ -838,36 +901,42 @@ class BillReviewApplication:
                         with open(debug_file, 'w') as f:
                             json.dump(debug_result, f, indent=2)
                         
-                        # Print summary
+                        # Print detailed info only in non-quiet mode
                         if debug_result["success"]:
-                            print(f"✓ Successfully processed {file_path.name}")
-                            print("  Processing steps:")
-                            for step in debug_result["processing_steps"]:
-                                print(f"    - {step}")
+                            if not quiet:
+                                print(f"✓ Successfully processed {file_path.name}")
+                                print("  Processing steps:")
+                                for step in debug_result["processing_steps"]:
+                                    print(f"    - {step}")
                         else:
-                            print(f"✗ Failed to process {file_path.name}")
-                            print(f"  Error type: {debug_result['error_type']}")
-                            print(f"  Error message: {debug_result['error_message']}")
+                            if not quiet:
+                                print(f"✗ Failed to process {file_path.name}")
+                                print(f"  Error type: {debug_result['error_type']}")
+                                print(f"  Error message: {debug_result['error_message']}")
                             
                             if debug_result.get("error_details"):
                                 if "validation_errors" in debug_result["error_details"]:
-                                    print("\n  Validation errors:")
-                                    for error in debug_result["error_details"]["validation_errors"]:
-                                        print(f"    - {error['validator']}:")
-                                        for msg in error.get("messages", []):
-                                            print(f"      * {msg}")
+                                    if not quiet:
+                                        print("\n  Validation errors:")
+                                        for error in debug_result["error_details"]["validation_errors"]:
+                                            print(f"    - {error['validator']}:")
+                                            for msg in error.get("messages", []):
+                                                print(f"      * {msg}")
                                 else:
-                                    print(f"  Error details: {debug_result['error_details']}")
+                                    if not quiet:
+                                        print(f"  Error details: {debug_result['error_details']}")
                             
                             if debug_result.get("data_sample"):
-                                print("\n  Data sample:")
-                                sample = debug_result["data_sample"]
-                                print(f"    - Line items count: {sample.get('line_items_count', 'unknown')}")
-                                print(f"    - Has bundle info: {sample.get('has_bundle_info', False)}")
-                                print(f"    - Has Order ID: {sample.get('has_order_id', False)}")
+                                if not quiet:
+                                    print("\n  Data sample:")
+                                    sample = debug_result["data_sample"]
+                                    print(f"    - Line items count: {sample.get('line_items_count', 'unknown')}")
+                                    print(f"    - Has bundle info: {sample.get('has_bundle_info', False)}")
+                                    print(f"    - Has Order ID: {sample.get('has_order_id', False)}")
                         
                     except Exception as e:
-                        print(f"✗ Error processing {file_path.name}: {str(e)}")
+                        if not quiet:
+                            print(f"✗ Error processing {file_path.name}: {str(e)}")
                         debug_results.append({
                             "file_path": str(file_path),
                             "file_name": file_path.name,
@@ -884,12 +953,10 @@ class BillReviewApplication:
                 # Analyze results
                 self._analyze_debug_results(debug_results)
                 
-                # Print summary
+                # Print summary - always show regardless of quiet mode
                 success_count = sum(1 for r in debug_results if r["success"])
-                print(f"\nDebug Summary:")
-                print(f"Total files processed: {len(debug_results)}")
-                print(f"Successful: {success_count}")
-                print(f"Failed: {len(debug_results) - success_count}")
+                failed_count = len(debug_results) - success_count
+                print(f"Debug Summary: {len(debug_results)} files | Success: {success_count} | Failed: {failed_count}")
                 
                 # Print error types
                 error_types = {}
@@ -898,13 +965,14 @@ class BillReviewApplication:
                         error_type = result["error_type"]
                         error_types[error_type] = error_types.get(error_type, 0) + 1
                 
-                if error_types:
+                if error_types and not quiet:
                     print("\nError types:")
                     for error_type, count in error_types.items():
                         print(f"  - {error_type}: {count} files")
-                    
+                
         except Exception as e:
-            print(f"Error loading reference data: {str(e)}")
+            if not quiet:
+                print(f"Error loading reference data: {str(e)}")
             return
 
     def _analyze_debug_results(self, debug_results):
@@ -938,29 +1006,32 @@ class BillReviewApplication:
         with open(analysis_file, 'w', encoding='utf-8') as f:
             json.dump(analysis, f, indent=2)
         
-        print("\nDebug Analysis:")
-        print(f"Total files: {analysis['total_files']}")
-        print(f"Successful: {analysis['success_count']}")
-        print(f"Failed: {analysis['failure_count']}")
-        print("\nError types:")
-        for error_type, count in error_types.most_common():
-            print(f"  {error_type}: {count}")
-        print("\nFailing steps:")
-        for step, count in failing_steps.most_common():
-            print(f"  {step}: {count}")
+        # Always print the summary stats, regardless of quiet mode
+        print(f"Analysis Summary: {analysis['total_files']} files | Success: {analysis['success_count']} | Failed: {analysis['failure_count']}")
+        
+        # Show detailed stats only if not quiet
+        if hasattr(self, 'quiet') and not self.quiet:
+            print("\nError types:")
+            for error_type, count in error_types.most_common():
+                print(f"  {error_type}: {count}")
+            print("\nFailing steps:")
+            for step, count in failing_steps.most_common():
+                print(f"  {step}: {count}")
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Healthcare Bill Review System 2.0")
     parser.add_argument("--debug", action="store_true", help="Run in debug mode")
     parser.add_argument("--sample", type=int, default=5, help="Number of files to debug")
+    parser.add_argument("--quiet", action="store_true", help="Suppress non-essential output")
     args = parser.parse_args()
     
-    print("Healthcare Bill Review System 2.0")
-    print("=================================")
+    if not args.quiet:
+        print("Healthcare Bill Review System 2.0")
+        print("=================================")
     
     app = BillReviewApplication()
     
     if args.debug:
-        app.run_debug(sample_size=args.sample)
+        app.run_debug(sample_size=args.sample, quiet=args.quiet)
     else:
-        app.run()
+        app.run(quiet=args.quiet)
