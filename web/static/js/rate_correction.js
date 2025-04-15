@@ -8,6 +8,58 @@ let currentProviderTin = '';
 let currentFailureData = null;
 let lineItemRates = [];
 let categoryRates = {};
+let ancillary_codes = { ancillary_codes: {} }; // Initialize with empty ancillary codes
+let ancillaryCodesLoaded = false;
+
+// Function to check if a code is ancillary
+function isAncillaryCode(cptCode) {
+    if (!ancillaryCodesLoaded) {
+        console.warn('Ancillary codes not loaded yet, checking against empty list');
+        return false;
+    }
+    return ancillary_codes.ancillary_codes[cptCode] === 'ancillary';
+}
+
+// Load ancillary codes configuration
+async function loadAncillaryCodes() {
+    try {
+        const response = await fetch('/config/ancillary_codes.json');
+        if (!response.ok) {
+            throw new Error(`HTTP error! status: ${response.status}`);
+        }
+        const data = await response.json();
+        if (data && data.ancillary_codes) {
+            ancillary_codes = data;
+            ancillaryCodesLoaded = true;
+            console.log('Ancillary codes loaded:', ancillary_codes);
+        } else {
+            throw new Error('Invalid ancillary codes format');
+        }
+    } catch (error) {
+        console.error('Error loading ancillary codes:', error);
+        // Initialize with default ancillary codes if loading fails
+        ancillary_codes = {
+            ancillary_codes: {
+                "Q9967": "ancillary",
+                "Q9966": "ancillary",
+                "A4550": "ancillary",
+                "A9578": "ancillary",
+                "A9575": "ancillary",
+                "A9573": "ancillary",
+                "A9585": "ancillary",
+                "G9637": "ancillary",
+                "G9322": "ancillary",
+                "A9503": "ancillary"
+            }
+        };
+        ancillaryCodesLoaded = true;
+        console.log('Using default ancillary codes');
+    }
+}
+
+// Load ancillary codes when the script loads
+loadAncillaryCodes();
+
 let availableCategories = {
   "MRI w/o": [
     "70551", "72141", "73721", "73718", "70540", "72195", 
@@ -44,7 +96,7 @@ let availableCategories = {
   ],
   "Ultrasound": [
     "76700", "76705", "76770", "76775", "76536",
-    "76604", "76642", "76856", "76857", "76870"
+    "76604", "76642", "76856", "76857", "76870", "76882"
   ]
 };
 
@@ -144,8 +196,18 @@ function closeAllModals() {
     }
 }
 
+// Helper function to check if a CPT code is in any category
+function isCPTInCategory(cptCode) {
+    for (const [category, codes] of Object.entries(availableCategories)) {
+        if (codes.includes(cptCode)) {
+            return true;
+        }
+    }
+    return false;
+}
+
 // Define and export the showRateCorrectionModal function immediately
-window.showRateCorrectionModal = function(failure) {
+window.showRateCorrectionModal = async function(failure, dbData) {
     try {
         console.log('Opening Rate Correction Modal');
         console.log('Checking if document qualifies for rate correction:', failure);
@@ -159,8 +221,8 @@ window.showRateCorrectionModal = function(failure) {
             return;
         }
         
-        // Get provider info from the correct location in the data structure
-        const providerInfo = failure.database_details?.provider_details || {};
+        // Get provider info from either dbData or failure.database_details
+        const providerInfo = dbData?.provider_details || failure.database_details?.provider_details || {};
         console.log('Provider info from database details:', providerInfo);
         
         if (!isInNetworkProvider(providerInfo)) {
@@ -180,7 +242,55 @@ window.showRateCorrectionModal = function(failure) {
         // Set provider information in modal
         document.getElementById('provider-tin').textContent = currentProviderTin;
         document.getElementById('provider-name').textContent = providerInfo.provider_name || 'Unknown Provider';
-        document.getElementById('provider-network').textContent = providerInfo.provider_network;
+        document.getElementById('provider-network').textContent = providerInfo.provider_network || providerInfo.network_status || 'Unknown';
+        
+        // Wait for ancillary codes to load if they haven't already
+        if (!ancillaryCodesLoaded) {
+            console.log('Waiting for ancillary codes to load...');
+            await loadAncillaryCodes();
+        }
+        
+        // Check for non-category CPT codes
+        let nonCategoryCPTs = [];
+        if (failure.line_items && Array.isArray(failure.line_items)) {
+            nonCategoryCPTs = failure.line_items
+                .filter(item => {
+                    if (!item.cpt_code) return false;
+                    // Check if the code is in the ancillary codes list
+                    if (isAncillaryCode(item.cpt_code)) {
+                        console.log(`Excluding ancillary code: ${item.cpt_code}`);
+                        return false;
+                    }
+                    return !isCPTInCategory(item.cpt_code);
+                })
+                .map(item => item.cpt_code);
+        } else if (failure.service_lines && Array.isArray(failure.service_lines)) {
+            nonCategoryCPTs = failure.service_lines
+                .filter(item => {
+                    if (!item.cpt_code) return false;
+                    // Check if the code is in the ancillary codes list
+                    if (isAncillaryCode(item.cpt_code)) {
+                        console.log(`Excluding ancillary code: ${item.cpt_code}`);
+                        return false;
+                    }
+                    return !isCPTInCategory(item.cpt_code);
+                })
+                .map(item => item.cpt_code);
+        }
+
+        // If there are non-category CPT codes, show a warning message
+        if (nonCategoryCPTs.length > 0) {
+            const warningMessage = document.createElement('div');
+            warningMessage.className = 'alert alert-warning mt-3';
+            warningMessage.innerHTML = `
+                <strong>Note:</strong> The following CPT codes are not in any predefined category:
+                <ul class="mb-0 mt-2">
+                    ${nonCategoryCPTs.map(cpt => `<li>${cpt}</li>`).join('')}
+                </ul>
+                <p class="mb-0 mt-2">These codes will need to be corrected individually in the Line Item Correction tab.</p>
+            `;
+            document.querySelector('.modal-body').insertBefore(warningMessage, document.querySelector('.nav-tabs'));
+        }
         
         // Populate line items table
         populateLineItemsTable(failure);
@@ -188,29 +298,23 @@ window.showRateCorrectionModal = function(failure) {
         // Populate category table
         populateCategoryTable();
         
-        // Reset active tab to line item correction
-        const tabElement = document.getElementById('line-item-tab');
-        if (tabElement) {
-            const tab = new bootstrap.Tab(tabElement);
-            tab.show();
-        }
-        
         // Show the modal
         const modalElement = document.getElementById('rateCorrectionModal');
-        if (modalElement) {
-            // Check if Bootstrap is loaded
-            if (typeof bootstrap !== 'undefined' && bootstrap.Modal) {
-                const modal = new bootstrap.Modal(modalElement);
-                modal.show();
-            } else {
-                // Fallback if Bootstrap is not loaded
-                modalElement.style.display = 'block';
-                modalElement.classList.add('show');
-                document.body.classList.add('modal-open');
-            }
-        } else {
+        if (!modalElement) {
             console.error('Rate correction modal element not found');
-            showErrorMessage('Could not find rate correction modal. Please refresh the page and try again.');
+            showErrorMessage('Error: Rate correction modal element not found. Please refresh the page and try again.');
+            return;
+        }
+        
+        // Check if Bootstrap is loaded
+        if (typeof bootstrap !== 'undefined' && bootstrap.Modal) {
+            const modal = new bootstrap.Modal(modalElement);
+            modal.show();
+        } else {
+            // Fallback if Bootstrap is not loaded
+            modalElement.style.display = 'block';
+            modalElement.classList.add('show');
+            document.body.classList.add('modal-open');
         }
     } catch (error) {
         console.error('Error in showRateCorrectionModal:', error);
@@ -223,213 +327,155 @@ window.showRateCorrectionModal = function(failure) {
  * @param {Object} failure - The failure data object
  */
 function populateLineItemsTable(failure) {
-  const tableBody = document.getElementById('line-items-body');
-  tableBody.innerHTML = '';
-  lineItemRates = [];
-  
-  console.log('Populating line items table with failure data:', failure);
-  
-  // Try to get rates from different possible locations
-  let rates = [];
-  
-  // Check service lines first (this is where the rate data is)
-  if (failure.service_lines && Array.isArray(failure.service_lines)) {
-    console.log('Found service lines:', failure.service_lines);
-    rates = failure.service_lines.map(item => ({
-      cpt: item.cpt_code,
-      description: item.description || item.proc_desc || '',
-      rate: parseFloat(item.charge_amount) || 0,
-      category: item.proc_category || ''
-    }));
-  }
-  // Check direct rates array
-  else if (failure.rates && Array.isArray(failure.rates)) {
-    console.log('Found rates in failure.rates:', failure.rates);
-    rates = failure.rates;
-  }
-  // Check database details
-  else if (failure.database_details?.rates) {
-    console.log('Found rates in database_details:', failure.database_details.rates);
-    rates = failure.database_details.rates;
-  }
-  // Check validation results
-  else if (failure.database_details?.validation_results?.rate_validation?.rates) {
-    console.log('Found rates in validation results:', failure.database_details.validation_results.rate_validation.rates);
-    rates = failure.database_details.validation_results.rate_validation.rates;
-  }
-  // Check line items
-  else if (failure.line_items) {
-    console.log('Found line items:', failure.line_items);
-    rates = failure.line_items.map(item => ({
-      cpt: item.cpt_code || item.proc_cd,
-      description: item.description || item.proc_desc,
-      rate: item.rate || item.amount,
-      category: item.proc_category || ''
-    }));
-  }
-  
-  if (rates.length === 0) {
-    console.log('No rates found in any location');
-    const row = document.createElement('tr');
-    row.innerHTML = '<td colspan="5" class="text-center">No rate issues found</td>';
-    tableBody.appendChild(row);
-    return;
-  }
-  
-  console.log('Processing rates for display:', rates);
-  
-  // Add each line item to the table
-  rates.forEach((rate, index) => {
-    const cptCode = rate.cpt || rate.proc_cd || '';
-    const description = rate.description || rate.proc_desc || '';
-    const currentRate = rate.rate || rate.amount || 0;
-    const currentCategory = rate.category || '';
+    const tableBody = document.getElementById('line-items-body');
+    tableBody.innerHTML = '';
+    lineItemRates = [];
     
-    console.log('Processing rate item:', { cptCode, description, currentRate, currentCategory });
+    console.log('Populating line items table with failure data:', failure);
     
-    // Create category dropdown
-    const categorySelect = document.createElement('select');
-    categorySelect.className = 'form-select category-select';
-    categorySelect.dataset.index = index;
-    categorySelect.dataset.cpt = cptCode;
+    // Try to get rates from different possible locations
+    let rates = [];
     
-    // Add default option
-    const defaultOption = document.createElement('option');
-    defaultOption.value = '';
-    defaultOption.textContent = 'Select Category';
-    categorySelect.appendChild(defaultOption);
+    // Check line items in the main data structure
+    if (failure.line_items && Array.isArray(failure.line_items)) {
+        console.log('Found line items:', failure.line_items);
+        rates = failure.line_items.map(item => ({
+            cpt: item.cpt_code,
+            description: item.description || item.proc_desc || '',
+            rate: parseFloat(item.charge_amount) || 0,
+            modifier: Array.isArray(item.modifiers) ? item.modifiers.join(', ') : (item.modifiers || '')
+        }));
+    }
+    // Fallback to service lines if line_items not found
+    else if (failure.service_lines && Array.isArray(failure.service_lines)) {
+        console.log('Found service lines:', failure.service_lines);
+        rates = failure.service_lines.map(item => ({
+            cpt: item.cpt_code,
+            description: item.description || item.proc_desc || '',
+            rate: parseFloat(item.charge_amount) || 0,
+            modifier: Array.isArray(item.modifiers) ? item.modifiers.join(', ') : (item.modifiers || '')
+        }));
+    }
     
-    // Add existing categories
-    Object.keys(availableCategories).forEach(category => {
-      const option = document.createElement('option');
-      option.value = category;
-      option.textContent = category;
-      if (category === currentCategory) {
-        option.selected = true;
-      }
-      categorySelect.appendChild(option);
+    // Store the rates for later use
+    lineItemRates = rates;
+    
+    // Populate the table
+    rates.forEach((item, index) => {
+        const row = document.createElement('tr');
+        row.innerHTML = `
+            <td>${item.cpt}</td>
+            <td>${item.description}</td>
+            <td>
+                <div class="input-group">
+                    <span class="input-group-text">$</span>
+                    <input type="number" 
+                           class="form-control rate-input" 
+                           value="${item.rate.toFixed(2)}"
+                           data-index="${index}"
+                           step="0.01"
+                           min="0">
+                </div>
+            </td>
+            <td>
+                <input type="text" 
+                       class="form-control modifier-input" 
+                       value="${item.modifier}"
+                       data-index="${index}"
+                       placeholder="Enter modifier">
+            </td>
+        `;
+        tableBody.appendChild(row);
     });
-    
-    // Add custom option
-    const customOption = document.createElement('option');
-    customOption.value = 'custom';
-    customOption.textContent = 'Add Custom Category';
-    categorySelect.appendChild(customOption);
-    
-    const row = document.createElement('tr');
-    row.innerHTML = `
-      <td>${cptCode}</td>
-      <td class="description-cell">${description}</td>
-      <td>$${currentRate.toFixed(2)}</td>
-      <td>
-        <input 
-          type="number" 
-          class="form-control rate-input" 
-          data-index="${index}" 
-          data-cpt="${cptCode}" 
-          min="0" 
-          step="0.01">
-      </td>
-      <td>
-        <div class="category-select-container">
-          ${categorySelect.outerHTML}
-          <input 
-            type="text" 
-            class="form-control custom-category-input d-none" 
-            placeholder="Enter custom category"
-            data-index="${index}">
-        </div>
-      </td>
-    `;
-    tableBody.appendChild(row);
-    
-    // Store line item for later use
-    lineItemRates.push({
-      cpt_code: cptCode,
-      description: description,
-      rate: null,
-      category: currentCategory
-    });
-    
-    // Add event listeners for category selection
-    const select = row.querySelector('.category-select');
-    const customInput = row.querySelector('.custom-category-input');
-    
-    select.addEventListener('change', function() {
-      if (this.value === 'custom') {
-        customInput.classList.remove('d-none');
-        customInput.focus();
-      } else {
-        customInput.classList.add('d-none');
-        lineItemRates[index].category = this.value;
-      }
-    });
-    
-    customInput.addEventListener('input', function() {
-      lineItemRates[index].category = this.value;
-    });
-  });
-  
-  // Add event listeners to rate inputs
-  const rateInputs = document.querySelectorAll('.rate-input');
-  rateInputs.forEach(input => {
-    input.addEventListener('input', function() {
-      const index = parseInt(this.dataset.index);
-      const rate = parseFloat(this.value);
-      
-      if (!isNaN(rate) && rate >= 0) {
-        this.classList.remove('is-invalid');
-        lineItemRates[index].rate = rate;
-      } else {
-        this.classList.add('is-invalid');
-        lineItemRates[index].rate = null;
-      }
-    });
-  });
 }
 
 /**
  * Populate the category table with CPT code categories
  */
 function populateCategoryTable() {
-  const tableBody = document.getElementById('category-body');
-  tableBody.innerHTML = '';
-  categoryRates = {};
-  
-  // Add each category to the table
-  for (const [category, codes] of Object.entries(availableCategories)) {
-    const row = document.createElement('tr');
-    row.innerHTML = `
-      <td>${category}</td>
-      <td class="cpt-codes-cell">${codes.join(', ')}</td>
-      <td>
-        <input 
-          type="number" 
-          class="form-control rate-input category-input" 
-          data-category="${category}" 
-          min="0" 
-          step="0.01">
-      </td>
-    `;
-    tableBody.appendChild(row);
-  }
-  
-  // Add event listeners to category rate inputs
-  const categoryInputs = document.querySelectorAll('.category-input');
-  categoryInputs.forEach(input => {
-    input.addEventListener('input', function() {
-      const category = this.dataset.category;
-      const rate = parseFloat(this.value);
-      
-      if (!isNaN(rate) && rate >= 0) {
-        this.classList.remove('is-invalid');
-        categoryRates[category] = rate;
-      } else {
-        this.classList.add('is-invalid');
-        delete categoryRates[category];
-      }
+    const tableBody = document.getElementById('category-body');
+    tableBody.innerHTML = '';
+    categoryRates = {};
+    
+    // Add each category to the table
+    Object.entries(availableCategories).forEach(([category, codes]) => {
+        // Initialize the category in categoryRates
+        categoryRates[category] = { rate: null, modifier: '' };
+        
+        const row = document.createElement('tr');
+        row.innerHTML = `
+            <td>${category}</td>
+            <td>${codes.join(', ')}</td>
+            <td>
+                <div class="input-group">
+                    <span class="input-group-text">$</span>
+                    <input type="number" 
+                           class="form-control rate-input" 
+                           data-category="${category}"
+                           step="0.01"
+                           min="0">
+                </div>
+            </td>
+            <td>
+                <input type="text" 
+                       class="form-control modifier-input" 
+                       data-category="${category}"
+                       placeholder="Enter modifier">
+            </td>
+        `;
+        tableBody.appendChild(row);
     });
-  });
+
+    // Add event listeners to rate inputs
+    const rateInputs = tableBody.querySelectorAll('.rate-input');
+    rateInputs.forEach(input => {
+        input.addEventListener('input', function() {
+            const category = this.dataset.category;
+            const rate = this.value.trim() === '' ? null : parseFloat(this.value);
+            
+            console.log('Rate input changed:', {
+                category,
+                value: this.value,
+                parsedRate: rate
+            });
+            
+            if (rate === null || (!isNaN(rate) && rate >= 0)) {
+                this.classList.remove('is-invalid');
+                if (category !== undefined) {
+                    // Category rate
+                    if (!categoryRates[category]) {
+                        categoryRates[category] = { rate: null, modifier: '' };
+                    }
+                    categoryRates[category].rate = rate;
+                    console.log('Updated categoryRates:', categoryRates);
+                }
+            } else {
+                this.classList.add('is-invalid');
+                if (category !== undefined) {
+                    if (categoryRates[category]) {
+                        categoryRates[category].rate = null;
+                    }
+                }
+            }
+        });
+    });
+
+    // Add event listeners to modifier inputs
+    const modifierInputs = tableBody.querySelectorAll('.modifier-input');
+    modifierInputs.forEach(input => {
+        input.addEventListener('input', function() {
+            const category = this.dataset.category;
+            const modifier = this.value.trim();
+            
+            if (category !== undefined) {
+                // Category modifier
+                if (!categoryRates[category]) {
+                    categoryRates[category] = { rate: null, modifier: '' };
+                }
+                categoryRates[category].modifier = modifier;
+            }
+        });
+    });
 }
 
 /**
@@ -441,6 +487,12 @@ async function saveRateCorrections() {
   const isLineItemActive = lineItemTab.classList.contains('show');
   
   try {
+    // Validate currentProviderTin
+    if (!currentProviderTin) {
+      showErrorMessage('Provider TIN is missing. Please try reopening the rate correction modal.');
+      return;
+    }
+
     let response;
     
     if (isLineItemActive) {
@@ -452,6 +504,18 @@ async function saveRateCorrections() {
         return;
       }
       
+      // Add modifiers to the line items (can be empty string)
+      const lineItemsWithModifiers = validRates.map(item => ({
+        cpt_code: item.cpt_code,
+        rate: item.rate,
+        modifier: item.modifier || ''  // Allow empty modifiers
+      }));
+      
+      console.log('Saving line item rates:', {
+        tin: currentProviderTin,
+        line_items: lineItemsWithModifiers
+      });
+
       response = await fetch('/api/rates/correct/line-items', {
         method: 'POST',
         headers: {
@@ -459,21 +523,41 @@ async function saveRateCorrections() {
         },
         body: JSON.stringify({
           tin: currentProviderTin,
-          line_items: validRates
+          line_items: lineItemsWithModifiers
         })
       });
     } else {
       // Save category corrections
       const categoryEntries = Object.entries(categoryRates);
       
-      if (categoryEntries.length === 0) {
-        showErrorMessage('Please enter at least one category rate');
+      console.log('Category entries before filtering:', categoryEntries);
+      
+      // Filter out categories with no rate set
+      const validCategories = categoryEntries.filter(([category, rateData]) => {
+        const isValid = rateData && rateData.rate !== null && rateData.rate !== undefined;
+        console.log('Checking category:', category, 'rateData:', rateData, 'isValid:', isValid);
+        return isValid;
+      });
+      
+      console.log('Valid categories after filtering:', validCategories);
+      
+      // Only validate if there are any rates entered
+      const hasAnyRates = validCategories.length > 0;
+      
+      if (!hasAnyRates) {
+        showErrorMessage('You are in the Category Correction tab but no rates have been entered. Please either:\n1. Enter rates for the categories you want to update, or\n2. Switch to the Line Item Correction tab if you want to correct individual CPT codes.');
         return;
       }
       
       const categoryData = {};
-      categoryEntries.forEach(([category, rate]) => {
-        categoryData[category] = rate;
+      validCategories.forEach(([category, rateData]) => {
+        // Send just the rate value, not the object with rate and modifier
+        categoryData[category] = rateData.rate;
+      });
+
+      console.log('Saving category rates:', {
+        tin: currentProviderTin,
+        category_rates: categoryData
       });
       
       response = await fetch('/api/rates/correct/category', {
@@ -497,17 +581,21 @@ async function saveRateCorrections() {
     
     // Close the modal
     const modal = bootstrap.Modal.getInstance(document.getElementById('rateCorrectionModal'));
-    modal.hide();
+    if (modal) {
+      modal.hide();
+    }
     
     // Show success message
     showSuccessMessage('Rate corrections saved successfully');
     
     // Update the UI to reflect the resolved failure
-    updateFailureStatus(currentFailureData);
+    if (currentFailureData) {
+      updateFailureStatus(currentFailureData);
+    }
     
   } catch (error) {
     console.error('Error saving rate corrections:', error);
-    showErrorMessage(error.message || 'Failed to save rate corrections');
+    showErrorMessage(error.message || 'Failed to save rate corrections. Please try again.');
   }
 }
 

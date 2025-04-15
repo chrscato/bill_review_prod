@@ -14,7 +14,7 @@
         <!-- Summary Statistics -->
         <div class="col-md-12 mb-4">
             <div class="row">
-                <div class="col-md-3">
+                <div class="col-md-2">
                     <div class="card text-white bg-primary mb-3">
                         <div class="card-body">
                             <h5 class="card-title">Total Failures</h5>
@@ -22,7 +22,7 @@
                         </div>
                     </div>
                 </div>
-                <div class="col-md-3">
+                <div class="col-md-2">
                     <div class="card text-white bg-danger mb-3">
                         <div class="card-body">
                             <h5 class="card-title">Rate Issues</h5>
@@ -30,7 +30,7 @@
                         </div>
                     </div>
                 </div>
-                <div class="col-md-3">
+                <div class="col-md-2">
                     <div class="card text-white bg-warning mb-3">
                         <div class="card-body">
                             <h5 class="card-title">Unauthorized</h5>
@@ -38,11 +38,27 @@
                         </div>
                     </div>
                 </div>
-                <div class="col-md-3">
+                <div class="col-md-2">
                     <div class="card text-white bg-success mb-3">
                         <div class="card-body">
                             <h5 class="card-title">Component Bills</h5>
                             <h2 class="display-4" id="component-issues">0</h2>
+                        </div>
+                    </div>
+                </div>
+                <div class="col-md-2">
+                    <div class="card text-white bg-info mb-3">
+                        <div class="card-body">
+                            <h5 class="card-title">CPT Issues</h5>
+                            <h2 class="display-4" id="cpt-issues">0</h2>
+                        </div>
+                    </div>
+                </div>
+                <div class="col-md-2">
+                    <div class="card text-white bg-secondary mb-3">
+                        <div class="card-body">
+                            <h5 class="card-title">Other Issues</h5>
+                            <h2 class="display-4" id="other-issues">0</h2>
                         </div>
                     </div>
                 </div>
@@ -52,11 +68,14 @@
         <!-- Charts -->
         <div class="col-md-6 mb-4">
             <div class="card">
-                <div class="card-header">
-                    <h5 class="card-title">Failures by Type</h5>
+                <div class="card-header d-flex justify-content-between align-items-center">
+                    <h5 class="card-title mb-0">Failures by Type</h5>
+                    <button class="btn btn-sm btn-outline-primary" id="refreshBtn">
+                        <i class="fas fa-sync-alt"></i> Refresh
+                    </button>
                 </div>
                 <div class="card-body">
-                    <div class="chart-container">
+                    <div class="chart-container" style="height: 300px;">
                         <canvas id="failures-by-type-chart"></canvas>
                     </div>
                 </div>
@@ -69,7 +88,7 @@
                     <h5 class="card-title">Network Status</h5>
                 </div>
                 <div class="card-body">
-                    <div class="chart-container">
+                    <div class="chart-container" style="height: 300px;">
                         <canvas id="network-status-chart"></canvas>
                     </div>
                 </div>
@@ -92,12 +111,13 @@
                                     <th>Patient Name</th>
                                     <th>Date</th>
                                     <th>Issue Type</th>
+                                    <th>Validation Messages</th>
                                     <th>Actions</th>
                                 </tr>
                             </thead>
                             <tbody id="recent-failures-table">
                                 <tr>
-                                    <td colspan="6" class="text-center">Loading recent failures...</td>
+                                    <td colspan="7" class="text-center">Loading recent failures...</td>
                                 </tr>
                             </tbody>
                         </table>
@@ -125,5 +145,6 @@
 
 {% block extra_scripts %}
 <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+<script src="https://kit.fontawesome.com/a076d05399.js"></script>
 <script src="{{ url_for('static', filename='js/dashboard.js') }}"></script>
 {% endblock %} 

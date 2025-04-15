@@ -897,19 +897,22 @@ async function loadFailures(filterType = 'all') {
         });
         console.log('Unique failure types:', Array.from(uniqueFailureTypes));
         
-        // Update status filter dropdown based on the page type
-        updateStatusFilter(allFailures, filterType);
-        
-        // Apply current filter
+        // Update status filter dropdown based on the page type if it exists
         const statusFilter = document.getElementById('statusFilter');
-        const filteredFailures = filterFailuresByStatus(allFailures, statusFilter.value);
-        console.log('Filtered failures:', {
-            filterType: statusFilter.value,
-            totalFiltered: filteredFailures.length
-        });
-        
-        // Display filtered failures
-        displayFailures(filteredFailures);
+        if (statusFilter) {
+            updateStatusFilter(allFailures, filterType);
+            // Apply current filter
+            const filteredFailures = filterFailuresByStatus(allFailures, statusFilter.value);
+            console.log('Filtered failures:', {
+                filterType: statusFilter.value,
+                totalFiltered: filteredFailures.length
+            });
+            // Display filtered failures
+            displayFailures(filteredFailures);
+        } else {
+            // If no status filter, just display all failures
+            displayFailures(allFailures);
+        }
         
     } catch (error) {
         console.error('Error loading failures:', error);
@@ -1730,6 +1733,31 @@ function _has_component_modifiers(failure) {
 function displayFailures(failures) {
     const container = document.getElementById('documentList');
     if (!container) {
+        // If we're on the dashboard page, update the dashboard instead
+        if (window.location.pathname === '/dashboard') {
+            updateDashboard({
+                total_failures: failures.length,
+                failure_counts: {
+                    rate: failures.filter(f => extractFailureTypes(f).has('RATE')).length,
+                    unauthorized: failures.filter(f => extractFailureTypes(f).has('UNAUTHORIZED')).length,
+                    component: failures.filter(f => extractFailureTypes(f).has('COMPONENT')).length,
+                    cpt: failures.filter(f => extractFailureTypes(f).has('CPT')).length,
+                    other: failures.filter(f => !extractFailureTypes(f).has('RATE') && 
+                                              !extractFailureTypes(f).has('UNAUTHORIZED') && 
+                                              !extractFailureTypes(f).has('COMPONENT') && 
+                                              !extractFailureTypes(f).has('CPT')).length
+                },
+                recent_failures: failures.slice(0, 10).map(f => ({
+                    filename: f.filename,
+                    order_id: f.order_id,
+                    patient_name: f.patient_info?.patient_name || 'N/A',
+                    date: f.date_of_service || 'N/A',
+                    failure_type: Array.from(extractFailureTypes(f))[0] || 'Unknown',
+                    validation_messages: f.validation_messages || []
+                }))
+            });
+            return;
+        }
         console.error('Document list container not found');
         return;
     }

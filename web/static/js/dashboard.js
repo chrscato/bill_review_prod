@@ -6,9 +6,48 @@ document.addEventListener('DOMContentLoaded', function() {
     // Set up refresh button if it exists
     const refreshBtn = document.getElementById('refreshBtn');
     if (refreshBtn) {
-        refreshBtn.addEventListener('click', fetchDashboardData);
+        refreshBtn.addEventListener('click', function() {
+            this.classList.add('fa-spin');
+            fetchDashboardData().finally(() => {
+                this.classList.remove('fa-spin');
+            });
+        });
     }
 });
+
+/**
+ * Show loading state
+ */
+function showLoading() {
+    const loadingEl = document.createElement('div');
+    loadingEl.id = 'loading-overlay';
+    loadingEl.className = 'loading-overlay';
+    loadingEl.innerHTML = '<div class="spinner-border text-primary" role="status"><span class="visually-hidden">Loading...</span></div>';
+    document.body.appendChild(loadingEl);
+}
+
+/**
+ * Hide loading state
+ */
+function hideLoading() {
+    const loadingEl = document.getElementById('loading-overlay');
+    if (loadingEl) {
+        loadingEl.remove();
+    }
+}
+
+/**
+ * Show error message
+ */
+function showError(message) {
+    const errorEl = document.createElement('div');
+    errorEl.className = 'alert alert-danger alert-dismissible fade show';
+    errorEl.innerHTML = `
+        ${message}
+        <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+    `;
+    document.querySelector('.container-fluid').prepend(errorEl);
+}
 
 /**
  * Fetch dashboard data from API
@@ -49,10 +88,22 @@ function updateDashboard(data) {
     document.getElementById('rate-issues').textContent = data.failure_counts.rate || 0;
     document.getElementById('unauthorized-issues').textContent = data.failure_counts.unauthorized || 0;
     document.getElementById('component-issues').textContent = data.failure_counts.component || 0;
+    document.getElementById('cpt-issues').textContent = data.failure_counts.cpt || 0;
+    document.getElementById('other-issues').textContent = data.failure_counts.other || 0;
     
     // Update charts
     createFailureTypeChart(data.failure_counts);
-    createNetworkStatusChart(data.network_status);
+    
+    // Only create network status chart if we have the data
+    if (data.network_status && Object.keys(data.network_status).length > 0) {
+        createNetworkStatusChart(data.network_status);
+    } else {
+        // Hide or clear the network status chart container
+        const networkStatusChart = document.getElementById('network-status-chart');
+        if (networkStatusChart) {
+            networkStatusChart.innerHTML = '<div class="alert alert-info">No network status data available</div>';
+        }
+    }
     
     // Update recent failures table
     updateRecentFailuresTable(data.recent_failures);
@@ -74,7 +125,17 @@ function createFailureTypeChart(failureCounts) {
     }
     
     // Extract labels and data
-    const labels = Object.keys(failureCounts);
+    const labels = Object.keys(failureCounts).map(key => {
+        switch(key) {
+            case 'rate': return 'Rate Issues';
+            case 'unauthorized': return 'Unauthorized';
+            case 'component': return 'Component Bills';
+            case 'cpt': return 'CPT Issues';
+            case 'intent': return 'Clinical Intent';
+            case 'other': return 'Other Issues';
+            default: return key;
+        }
+    });
     const data = Object.values(failureCounts);
     
     // Define colors
@@ -82,10 +143,9 @@ function createFailureTypeChart(failureCounts) {
         '#dc3545', // danger (rate)
         '#ffc107', // warning (unauthorized)
         '#28a745', // success (component)
-        '#6f42c1', // purple (rate correction)
-        '#fd7e14', // orange (OTA)
-        '#17a2b8', // info
-        '#6c757d'  // secondary
+        '#17a2b8', // info (cpt)
+        '#6f42c1', // purple (intent)
+        '#6c757d'  // secondary (other)
     ];
     
     // Create chart
@@ -183,7 +243,7 @@ function updateRecentFailuresTable(recentFailures) {
     const tableBody = document.getElementById('recent-failures-table');
     
     if (!recentFailures || recentFailures.length === 0) {
-        tableBody.innerHTML = '<tr><td colspan="6" class="text-center">No recent failures found</td></tr>';
+        tableBody.innerHTML = '<tr><td colspan="7" class="text-center">No recent failures found</td></tr>';
         return;
     }
     
@@ -199,13 +259,19 @@ function updateRecentFailuresTable(recentFailures) {
         if (failure.failure_type === 'rate') badgeClass = 'bg-danger';
         if (failure.failure_type === 'unauthorized') badgeClass = 'bg-warning';
         if (failure.failure_type === 'component') badgeClass = 'bg-success';
+        if (failure.failure_type === 'cpt') badgeClass = 'bg-info';
+        
+        // Format validation messages
+        const messages = failure.validation_messages || [];
+        const messagesHtml = messages.map(msg => `<div class="text-muted small">${msg}</div>`).join('');
         
         row.innerHTML = `
             <td>${failure.filename}</td>
             <td>${failure.order_id || 'N/A'}</td>
             <td>${failure.patient_name || 'N/A'}</td>
-            <td>${failure.date}</td>
+            <td>${failure.date || 'N/A'}</td>
             <td><span class="badge ${badgeClass}">${failure.failure_type}</span></td>
+            <td>${messagesHtml}</td>
             <td>
                 <a href="javascript:void(0)" onclick="viewFailure('${failure.filename}')" class="btn btn-sm btn-outline-primary">View</a>
             </td>
@@ -244,33 +310,50 @@ function updateBreakdownCards(breakdown) {
         const col = document.createElement('div');
         col.className = 'col-md-4 mb-4';
         
-        // Get appropriate card color
+        // Get appropriate card color and title
         let cardClass = 'bg-light';
-        if (category === 'rate') cardClass = 'border-danger';
-        if (category === 'unauthorized') cardClass = 'border-warning';
-        if (category === 'component') cardClass = 'border-success';
+        let title = category;
+        switch(category) {
+            case 'rate':
+                cardClass = 'border-danger';
+                title = 'Rate Issues';
+                break;
+            case 'unauthorized':
+                cardClass = 'border-warning';
+                title = 'Unauthorized Services';
+                break;
+            case 'component':
+                cardClass = 'border-success';
+                title = 'Component Billing';
+                break;
+            case 'cpt':
+                cardClass = 'border-info';
+                title = 'CPT Validation';
+                break;
+        }
         
-        const card = document.createElement('div');
-        card.className = `card ${cardClass}`;
-        
-        let listItems = '';
+        // Create card content
+        let cardContent = '';
         Object.entries(data).forEach(([subcategory, count]) => {
-            listItems += `<li class="list-group-item d-flex justify-content-between align-items-center">
-                ${subcategory}
-                <span class="badge bg-primary rounded-pill">${count}</span>
-            </li>`;
+            cardContent += `
+                <div class="d-flex justify-content-between align-items-center mb-2">
+                    <span>${subcategory}</span>
+                    <span class="badge bg-primary">${count}</span>
+                </div>
+            `;
         });
         
-        card.innerHTML = `
-            <div class="card-header">
-                <h5 class="card-title">${category.charAt(0).toUpperCase() + category.slice(1)} Issues</h5>
+        col.innerHTML = `
+            <div class="card ${cardClass}">
+                <div class="card-header">
+                    <h5 class="card-title mb-0">${title}</h5>
+                </div>
+                <div class="card-body">
+                    ${cardContent}
+                </div>
             </div>
-            <ul class="list-group list-group-flush">
-                ${listItems}
-            </ul>
         `;
         
-        col.appendChild(card);
         container.appendChild(col);
     });
 } 

@@ -27,7 +27,7 @@ const OTACorrectionModule = (function() {
     }
 
     // Define and export the showOTACorrectionModal function
-    window.showOTACorrectionModal = function(failure) {
+    window.showOTACorrectionModal = function(failure, dbData) {
         try {
             console.log('Opening OTA Correction Modal');
             console.log('Checking if document qualifies for OTA correction:', failure);
@@ -41,8 +41,8 @@ const OTACorrectionModule = (function() {
                 return;
             }
             
-            // Get provider info from the correct location in the data structure
-            const providerInfo = failure.database_details?.provider_details || {};
+            // Get provider info from either dbData or failure.database_details
+            const providerInfo = dbData?.provider_details || failure.database_details?.provider_details || {};
             console.log('Provider info from database details:', providerInfo);
             
             if (!isOutOfNetworkProvider(providerInfo)) {
@@ -74,7 +74,7 @@ const OTACorrectionModule = (function() {
             }
             
             providerNameElement.textContent = providerInfo.provider_name || 'Unknown Provider';
-            providerNetworkElement.textContent = providerInfo.provider_network || 'Out of Network';
+            providerNetworkElement.textContent = providerInfo.provider_network || providerInfo.network_status || 'Out of Network';
             orderIdElement.textContent = currentOrderId;
             
             // Populate line items table
@@ -252,8 +252,88 @@ const OTACorrectionModule = (function() {
         });
     }
 
+    // Function to save OTA corrections
+    async function saveOTACorrections() {
+        try {
+            if (!currentOrderId) {
+                showErrorMessage('No Order ID found. Please try again.');
+                return;
+            }
+
+            // Get all the rate inputs
+            const rateInputs = document.querySelectorAll('.ota-rate-input');
+            const lineItems = [];
+
+            // Collect all the line items with their rates
+            rateInputs.forEach(input => {
+                const index = parseInt(input.dataset.index);
+                const originalItem = otaLineItemRates[index];
+                
+                if (originalItem) {
+                    lineItems.push({
+                        cpt_code: originalItem.cpt,
+                        rate: parseFloat(input.value) || 0,
+                        modifier: originalItem.modifier || ''
+                    });
+                }
+            });
+
+            // Validate that we have line items
+            if (lineItems.length === 0) {
+                showErrorMessage('No line items found to save.');
+                return;
+            }
+
+            // Prepare the data for the API call
+            const data = {
+                order_id: currentOrderId,
+                line_items: lineItems
+            };
+
+            // Make the API call to save the OTA rates
+            const response = await fetch('/api/otas/correct/line-items', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify(data)
+            });
+
+            const result = await response.json();
+
+            if (response.ok) {
+                // Show success message
+                showSuccessMessage('OTA rates saved successfully!');
+                
+                // Close the modal
+                const modal = bootstrap.Modal.getInstance(document.getElementById('otaCorrectionModal'));
+                if (modal) modal.hide();
+                
+                // Refresh the page to show updated data
+                window.location.reload();
+            } else {
+                showErrorMessage(result.error || 'Failed to save OTA rates. Please try again.');
+            }
+        } catch (error) {
+            console.error('Error saving OTA corrections:', error);
+            showErrorMessage('An error occurred while saving OTA rates. Please try again.');
+        }
+    }
+
     // Return the public API
     return {
-        showOTACorrectionModal: window.showOTACorrectionModal
+        showOTACorrectionModal: window.showOTACorrectionModal,
+        saveOTACorrections: saveOTACorrections
     };
-})(); 
+})();
+
+// Attach event listeners when the DOM is fully loaded
+document.addEventListener('DOMContentLoaded', function() {
+    // Attach save button click event
+    const saveButton = document.getElementById('save-ota-corrections');
+    if (saveButton) {
+        saveButton.addEventListener('click', function() {
+            OTACorrectionModule.saveOTACorrections();
+        });
+    }
+}); 

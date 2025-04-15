@@ -22,10 +22,14 @@ class HCFAService:
             List[Dict]: List of failed files with their details
         """
         failed_files = []
+        total_files = 0
+        skipped_files = 0
+        error_files = 0
         
         try:
             logger.info(f"Reading failed files from: {self.fails_dir}")
             for file_path in self.fails_dir.glob("*.json"):
+                total_files += 1
                 try:
                     data = self._read_hcfa_file(file_path)
                     if data:
@@ -38,9 +42,19 @@ class HCFAService:
                             'validation_messages': data.get('validation_messages', []),
                             'last_modified': datetime.fromtimestamp(file_path.stat().st_mtime).strftime('%Y-%m-%d %H:%M:%S')
                         })
+                    else:
+                        skipped_files += 1
                 except Exception as e:
                     logger.error(f"Error reading file {file_path}: {str(e)}")
+                    error_files += 1
                     continue
+                    
+            # Log summary statistics
+            logger.info(f"File processing summary:")
+            logger.info(f"Total JSON files found: {total_files}")
+            logger.info(f"Successfully processed files: {len(failed_files)}")
+            logger.info(f"Skipped files (invalid format): {skipped_files}")
+            logger.info(f"Error files: {error_files}")
                     
         except Exception as e:
             logger.error(f"Error accessing fails directory: {str(e)}")

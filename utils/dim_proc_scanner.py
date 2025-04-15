@@ -10,28 +10,25 @@ import re
 
 logger = logging.getLogger(__name__)
 
+# Default paths and table names
+DEFAULT_DB_PATH = r"C:\Users\ChristopherCato\OneDrive - clarity-dx.com\Documents\Bill_Review_INTERNAL\reference_tables\orders2.db"
+DEFAULT_STAGING_PATH = r"C:\Users\ChristopherCato\OneDrive - clarity-dx.com\Documents\Bill_Review_INTERNAL\scripts\VAILIDATION\data\extracts\valid\mapped\staging"
+DEFAULT_TABLE_NAME = "dim_proc"
+
 class DimProcScanner:
     """
     Utility to scan for CPT codes missing from dim_proc table.
     Helps identify codes that need to be added to the reference table.
     """
     
-    def __init__(self, db_path: str = None, staging_path: str = None):
+    def __init__(self, db_path: str = DEFAULT_DB_PATH, staging_path: str = DEFAULT_STAGING_PATH):
         """
         Initialize the scanner.
         
         Args:
-            db_path: Path to SQLite database (default: brsystem.db in current directory)
-            staging_path: Path to staging folder with JSON files (default: staging/ in current directory)
+            db_path: Path to SQLite database (default: orders2.db in reference_tables)
+            staging_path: Path to staging folder with JSON files (default: mapped/staging)
         """
-        # Default to brsystem.db in current directory if not specified
-        if db_path is None:
-            db_path = "brsystem.db"
-            
-        # Default to staging/ in current directory if not specified
-        if staging_path is None:
-            staging_path = "staging"
-            
         self.db_path = db_path
         self.staging_path = staging_path
         self._verify_db()
@@ -441,8 +438,8 @@ def main():
     )
     
     parser = argparse.ArgumentParser(description="Scan for CPT codes missing from dim_proc")
-    parser.add_argument("--db", help="Path to SQLite database (default: brsystem.db in current directory)")
-    parser.add_argument("--staging", help="Path to staging directory (default: staging/ in current directory)")
+    parser.add_argument("--db", help=f"Path to SQLite database (default: {DEFAULT_DB_PATH})")
+    parser.add_argument("--staging", help=f"Path to staging directory (default: {DEFAULT_STAGING_PATH})")
     parser.add_argument("--output", help="Path to save report (default: print to console)")
     parser.add_argument("--source", choices=['all', 'line_items', 'json'], 
                        default='all', help="Which sources to scan (default: all)")
@@ -456,7 +453,11 @@ def main():
         logging.getLogger().setLevel(logging.WARNING)
     
     try:
-        scanner = DimProcScanner(args.db, args.staging)
+        # Use default values if not specified
+        db_path = args.db if args.db else DEFAULT_DB_PATH
+        staging_path = args.staging if args.staging else DEFAULT_STAGING_PATH
+        
+        scanner = DimProcScanner(db_path, staging_path)
         
         if args.json_only:
             if args.output:

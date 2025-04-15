@@ -25,6 +25,7 @@ from core.validators.line_items import LineItemValidator
 from core.validators.rate_validator import RateValidator
 from core.validators.modifier_validator import ModifierValidator
 from core.validators.units_validator import UnitsValidator
+from core.validators.cpt_validator import CPTValidator
 
 # Models
 from core.models.validation import ValidationResult, ValidationSession
@@ -154,6 +155,14 @@ class BillReviewApplication:
                 validation_results = {}
                 critical_failures = []
                 non_critical_failures = []
+                
+                # 1. Check CPT codes against dim_proc table
+                cpt_result = validators['cpt'].validate(hcfa_data)
+                validation_results['cpt'] = cpt_result
+                
+                # If CPT validation fails, add to critical failures
+                if cpt_result.get('status') == 'FAIL':
+                    critical_failures.append(("cpt", cpt_result.get('message', 'CPT validation failed')))
                 
                 # Detect bundle from line items
                 bundle_result = validators['bundle'].validate(order_data, hcfa_data)
@@ -770,12 +779,13 @@ class BillReviewApplication:
             
             # Initialize all validators
             validators = {
-                'bundle': BundleValidator(settings.BUNDLE_CONFIG),
+                'bundle': BundleValidator(),
                 'intent': ClinicalIntentValidator(),
-                'line_items': LineItemValidator(dim_proc_df=dim_proc_df),
+                'line_items': LineItemValidator(),
                 'modifier': ModifierValidator(),
                 'units': UnitsValidator(),
-                'rate': RateValidator(conn, quiet=self.quiet)
+                'rate': RateValidator(conn, quiet=self.quiet),
+                'cpt': CPTValidator()
             }
 
             # Check for files in the escalations folder
@@ -879,12 +889,13 @@ class BillReviewApplication:
             
                 # Initialize validators with database connection
                 validators = {
-                    'bundle': BundleValidator(settings.BUNDLE_CONFIG),
+                    'bundle': BundleValidator(),
                     'intent': ClinicalIntentValidator(), 
-                    'line_items': LineItemValidator(dim_proc_df=dim_proc_df),
+                    'line_items': LineItemValidator(),
                     'modifier': ModifierValidator(),
                     'units': UnitsValidator(),
-                    'rate': RateValidator(conn, quiet=self.quiet)  # Pass the database connection
+                    'rate': RateValidator(conn, quiet=self.quiet),  # Pass the database connection
+                    'cpt': CPTValidator()
                 }
                 
                 # Process each file

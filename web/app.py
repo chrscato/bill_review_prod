@@ -13,10 +13,12 @@ import os
 from core.services.normalizer import normalize_hcfa_format
 from web.routes.rate_routes import rate_bp  # Import the rate routes blueprint
 from web.routes.ota_routes import ota_bp
+from werkzeug.middleware.proxy_fix import ProxyFix  # Add this import
 
 app = Flask(__name__)
 CORS(app)  # Enable CORS for all routes
 app.config['SECRET_KEY'] = 'your-secret-key-here'  # Change this in production
+app.wsgi_app = ProxyFix(app.wsgi_app)  # Add this line for proper URL handling
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -563,6 +565,7 @@ def get_dashboard_data():
             'unauthorized': 0,
             'component': 0,
             'intent': 0,
+            'cpt': 0,
             'other': 0
         }
         
@@ -576,7 +579,8 @@ def get_dashboard_data():
         breakdown = {
             'rate': {},
             'unauthorized': {},
-            'component': {}
+            'component': {},
+            'cpt': {}
         }
         
         # Process each failure
@@ -588,7 +592,13 @@ def get_dashboard_data():
             validation_messages = failure.get('validation_messages', [])
             messages_text = ' '.join(validation_messages).lower()
             
-            if 'rate validation failed' in messages_text or 'rate issue' in messages_text:
+            # Check for CPT validation failures first
+            if 'unknown cpt' in messages_text or 'cpt validation failed' in messages_text:
+                failure_type = 'cpt'
+                breakdown['cpt']['Unknown CPT'] = breakdown['cpt'].get('Unknown CPT', 0) + 1
+                
+            # Check for rate validation failures
+            elif 'rate validation failed' in messages_text or 'rate issue' in messages_text:
                 failure_type = 'rate'
                 
                 # Add to rate breakdown
@@ -599,6 +609,7 @@ def get_dashboard_data():
                 else:
                     breakdown['rate']['Other Rate Issue'] = breakdown['rate'].get('Other Rate Issue', 0) + 1
                 
+            # Check for unauthorized services
             elif 'line_items validation failed' in messages_text or 'missing from order' in messages_text:
                 failure_type = 'unauthorized'
                 
@@ -610,6 +621,7 @@ def get_dashboard_data():
                 else:
                     breakdown['unauthorized']['Other Line Item Issue'] = breakdown['unauthorized'].get('Other Line Item Issue', 0) + 1
                 
+            # Check for component billing
             elif 'technical component' in messages_text or 'professional component' in messages_text:
                 failure_type = 'component'
                 
@@ -621,6 +633,7 @@ def get_dashboard_data():
                 else:
                     breakdown['component']['Other Component Issue'] = breakdown['component'].get('Other Component Issue', 0) + 1
                 
+            # Check for clinical intent issues
             elif 'intent validation failed' in messages_text or 'clinical intent' in messages_text:
                 failure_type = 'intent'
             
@@ -653,7 +666,8 @@ def get_dashboard_data():
                 'order_id': failure.get('order_id'),
                 'patient_name': failure.get('patient_name'),
                 'date': failure.get('date_of_service'),
-                'failure_type': failure.get('failure_type', 'other')
+                'failure_type': failure.get('failure_type', 'other'),
+                'validation_messages': failure.get('validation_messages', [])
             })
         
         # Remove empty categories from breakdown
@@ -875,6 +889,37 @@ def get_escalation(filename):
         })
     except Exception as e:
         logger.error(f"Error getting escalation: {str(e)}")
+        return jsonify({
+            'status': 'error',
+            'message': str(e)
+        }), 500
+
+# Add new route for medical records app
+@app.route('/medical-records')
+def medical_records():
+    """Render the medical records app interface."""
+    return render_template('medical_records.html')
+
+# Add new route to proxy requests to medical records app
+@app.route('/medical-records/<path:path>', methods=['GET', 'POST'])
+def medical_records_proxy(path):
+    """Proxy requests to the medical records app."""
+    try:
+        from integrate.medical_records_app.app import app as medical_app
+        with medical_app.test_request_context(path=path, method=request.method):
+            return medical_app.full_dispatch_request()
+    except Exception as e:
+        logger.error(f"Error proxying to medical records app: {str(e)}")
+        return jsonify({'error': 'Failed to process medical records request'}), 500
+
+@app.route('/config/ancillary_codes.json')
+def get_ancillary_codes():
+    """API endpoint to serve the ancillary codes configuration file."""
+    try:
+        config_path = Path(__file__).parent.parent / 'config' / 'ancillary_codes.json'
+        return send_file(str(config_path), mimetype='application/json')
+    except Exception as e:
+        logger.error(f"Error serving ancillary codes configuration: {str(e)}")
         return jsonify({
             'status': 'error',
             'message': str(e)
