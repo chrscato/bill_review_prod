@@ -1,0 +1,33 @@
+{% extends "base.html" %}
+
+{% block title %}Mapping Home{% endblock %}
+
+{% block content %}
+<div class="container mt-4">
+    <h1 class="mb-4">Mapping Tools</h1>
+    
+    <div class="row">
+        <!-- Unmapped Items Card -->
+        <div class="col-md-6 mb-4">
+            <div class="card h-100">
+                <div class="card-body">
+                    <h5 class="card-title">Unmapped Items</h5>
+                    <p class="card-text">Review and map items that need to be mapped to standard values.</p>
+                    <a href="{{ url_for('mapping.unmapped') }}" class="btn btn-primary">Go to Unmapped Items</a>
+                </div>
+            </div>
+        </div>
+        
+        <!-- Corrections Card -->
+        <div class="col-md-6 mb-4">
+            <div class="card h-100">
+                <div class="card-body">
+                    <h5 class="card-title">OCR Corrections</h5>
+                    <p class="card-text">Review and correct OCR results for medical records.</p>
+                    <a href="{{ url_for('mapping.corrections') }}" class="btn btn-primary">Go to Corrections</a>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %} 

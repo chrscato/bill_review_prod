@@ -1,0 +1,84 @@
+{% extends "base.html" %}
+
+{% block title %}Processing Home{% endblock %}
+
+{% block content %}
+<div class="container mt-5">
+    <div class="row justify-content-center">
+        <div class="col-md-8 text-center">
+            <h1 class="display-4 mb-4">Processing Home</h1>
+            <p class="lead mb-5">Welcome to the Processing section. Here you can access all bill review processing tools.</p>
+            
+            <div class="row">
+                <div class="col-md-6 mb-4">
+                    <div class="card h-100">
+                        <div class="card-body">
+                            <h2 class="card-title">Dashboard</h2>
+                            <p class="card-text">View and manage your bill review dashboard.</p>
+                            <a href="{{ url_for('dashboard') }}" class="btn btn-primary">Go to Dashboard</a>
+                        </div>
+                    </div>
+                </div>
+                
+                <div class="col-md-6 mb-4">
+                    <div class="card h-100">
+                        <div class="card-body">
+                            <h2 class="card-title">Instructions</h2>
+                            <p class="card-text">View processing instructions and guidelines.</p>
+                            <a href="{{ url_for('instructions') }}" class="btn btn-primary">Go to Instructions</a>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            
+            <div class="row mt-4">
+                <div class="col-md-6 mb-4">
+                    <div class="card h-100">
+                        <div class="card-body">
+                            <h2 class="card-title">Unauthorized Services</h2>
+                            <p class="card-text">Review and manage unauthorized services.</p>
+                            <a href="{{ url_for('unauthorized_services') }}" class="btn btn-primary">Go to Unauthorized Services</a>
+                        </div>
+                    </div>
+                </div>
+                
+                <div class="col-md-6 mb-4">
+                    <div class="card h-100">
+                        <div class="card-body">
+                            <h2 class="card-title">Non-Global Bills</h2>
+                            <p class="card-text">Manage non-global bill reviews.</p>
+                            <a href="{{ url_for('non_global_bills') }}" class="btn btn-primary">Go to Non-Global Bills</a>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="row mt-4">
+                <div class="col-md-6 mb-4">
+                    <div class="card h-100">
+                        <div class="card-body">
+                            <h2 class="card-title">Rate Issues</h2>
+                            <p class="card-text">Review and correct rate-related issues.</p>
+                            <a href="{{ url_for('rate_corrections') }}" class="btn btn-primary">Go to Rate Issues</a>
+                        </div>
+                    </div>
+                </div>
+                
+                <div class="col-md-6 mb-4">
+                    <div class="card h-100">
+                        <div class="card-body">
+                            <h2 class="card-title">Escalations</h2>
+                            <p class="card-text">Manage bill review escalations and exceptions.</p>
+                            <a href="{{ url_for('escalations') }}" class="btn btn-primary">Go to Escalations</a>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            
+            <div class="mt-4">
+                <a href="{{ url_for('portal_home') }}" class="btn btn-outline-secondary">Back to Portal Home</a>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %} 

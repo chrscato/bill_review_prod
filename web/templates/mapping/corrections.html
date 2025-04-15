@@ -1,0 +1,99 @@
+{% extends "base.html" %}
+
+{% block title %}OCR Corrections{% endblock %}
+
+{% block styles %}
+<link href="{{ url_for('static', filename='mapping/css/corrections.css') }}" rel="stylesheet">
+{% endblock %}
+
+{% block content %}
+<div class="row">
+    <!-- Left panel: File list -->
+    <div class="col-md-3">
+        <div class="card">
+            <div class="card-header">Files Needing Correction</div>
+            <div class="card-body file-list p-0">
+                <div class="list-group" id="fileList">
+                    <!-- Files will be listed here -->
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <!-- Middle panel: Record details and PDF viewer -->
+    <div class="col-md-5">
+        <div class="card mb-3">
+            <div class="card-header">Record Details</div>
+            <div class="card-body">
+                <div id="recordDetails">
+                    <div class="alert alert-info">Select a file to review</div>
+                </div>
+                <div class="mb-3">
+                    <label for="patientName" class="form-label">Patient Name</label>
+                    <input type="text" class="form-control" id="patientName">
+                </div>
+                <div class="row mb-3">
+                    <div class="col-md-6">
+                        <label for="patientDOB" class="form-label">Date of Birth</label>
+                        <input type="text" class="form-control" id="patientDOB">
+                    </div>
+                    <div class="col-md-6">
+                        <label for="patientZip" class="form-label">Patient Zip</label>
+                        <input type="text" class="form-control" id="patientZip">
+                    </div>
+                </div>
+                <div class="d-flex gap-2">
+                    <button id="saveButton" class="btn btn-primary" disabled>Save Changes</button>
+                    <button id="prevButton" class="btn btn-outline-secondary" disabled>Previous</button>
+                    <button id="nextButton" class="btn btn-outline-secondary" disabled>Next</button>
+                </div>
+            </div>
+        </div>
+        
+        <div class="card">
+            <div class="card-header">Service Lines</div>
+            <div class="card-body">
+                <div id="serviceLines">
+                    <!-- Service lines will be listed here -->
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <!-- Right panel: PDF viewer -->
+    <div class="col-md-4">
+        <div class="card">
+            <div class="card-header">PDF Viewer</div>
+            <div class="card-body">
+                <ul class="nav nav-tabs mb-3" id="pdfTabs">
+                    <li class="nav-item">
+                        <a class="nav-link active" data-bs-toggle="tab" href="#fullPdf">Full PDF</a>
+                    </li>
+                    <li class="nav-item">
+                        <a class="nav-link" data-bs-toggle="tab" href="#headerRegion">Header</a>
+                    </li>
+                    <li class="nav-item">
+                        <a class="nav-link" data-bs-toggle="tab" href="#serviceRegion">Service Lines</a>
+                    </li>
+                </ul>
+                <div class="tab-content">
+                    <div class="tab-pane fade show active" id="fullPdf">
+                        <iframe id="pdfFrame" class="pdf-viewer" src="about:blank"></iframe>
+                    </div>
+                    <div class="tab-pane fade" id="headerRegion">
+                        <img id="headerImage" class="region-image" src="" alt="Header region">
+                    </div>
+                    <div class="tab-pane fade" id="serviceRegion">
+                        <img id="serviceImage" class="region-image" src="" alt="Service lines region">
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script src="{{ url_for('static', filename='mapping/js/corrections/main.js') }}"></script>
+<script src="{{ url_for('static', filename='mapping/js/corrections/editor.js') }}"></script>
+{% endblock %} 

@@ -1,4 +1,4 @@
-from flask import Flask, render_template, jsonify, request, send_from_directory, send_file, abort
+from flask import Flask, render_template, jsonify, request, send_from_directory, send_file, abort, redirect, url_for
 from pathlib import Path
 import json
 from typing import List, Dict
@@ -14,6 +14,7 @@ from core.services.normalizer import normalize_hcfa_format
 from web.routes.rate_routes import rate_bp  # Import the rate routes blueprint
 from web.routes.ota_routes import ota_bp
 from werkzeug.middleware.proxy_fix import ProxyFix  # Add this import
+from web.routes.mapping_routes import mapping_bp
 
 app = Flask(__name__)
 CORS(app)  # Enable CORS for all routes
@@ -31,6 +32,7 @@ hcfa_service = HCFAService()
 # Register blueprints
 app.register_blueprint(rate_bp, url_prefix='/api/rates')
 app.register_blueprint(ota_bp, url_prefix='/api/otas')
+app.register_blueprint(mapping_bp, url_prefix='/mapping')
 
 # Configure paths
 app.config['JSON_PATH'] = r"C:\Users\ChristopherCato\OneDrive - clarity-dx.com\Documents\Bill_Review_INTERNAL\scripts\VAILIDATION\data\extracts\valid\mapped\staging"
@@ -246,8 +248,23 @@ def get_failed_files():
 
 @app.route('/')
 def index():
-    """Render the main page."""
-    return render_template('index.html')
+    """Redirect to the portal home page."""
+    return redirect(url_for('portal_home'))
+
+@app.route('/portal')
+def portal_home():
+    """Render the main portal home page."""
+    return render_template('portal_home.html')
+
+@app.route('/mapping')
+def mapping_home():
+    """Render the mapping home page."""
+    return render_template('mapping_home.html')
+
+@app.route('/processing')
+def processing_home():
+    """Render the processing home page."""
+    return render_template('processing_home.html')
 
 @app.route('/escalations')
 def escalations():
@@ -894,23 +911,20 @@ def get_escalation(filename):
             'message': str(e)
         }), 500
 
-# Add new route for medical records app
-@app.route('/medical-records')
-def medical_records():
-    """Render the medical records app interface."""
-    return render_template('medical_records.html')
+# @app.route('/medical-records')
+# def medical_records():
+#     """Render the medical records page."""
+#     return render_template('medical_records.html')
 
-# Add new route to proxy requests to medical records app
-@app.route('/medical-records/<path:path>', methods=['GET', 'POST'])
-def medical_records_proxy(path):
-    """Proxy requests to the medical records app."""
-    try:
-        from integrate.medical_records_app.app import app as medical_app
-        with medical_app.test_request_context(path=path, method=request.method):
-            return medical_app.full_dispatch_request()
-    except Exception as e:
-        logger.error(f"Error proxying to medical records app: {str(e)}")
-        return jsonify({'error': 'Failed to process medical records request'}), 500
+# @app.route('/medical-records/<path:path>', methods=['GET', 'POST'])
+# def medical_records_proxy(path):
+#     """Proxy requests to the medical records service."""
+#     try:
+#         # Remove the entire function body
+#         pass
+#     except Exception as e:
+#         logger.error(f"Medical records proxy error: {str(e)}")
+#         return jsonify({'error': str(e)}), 500
 
 @app.route('/config/ancillary_codes.json')
 def get_ancillary_codes():
@@ -926,4 +940,5 @@ def get_ancillary_codes():
         }), 500
 
 if __name__ == '__main__':
-    app.run(debug=True) 
+    port = int(os.environ.get('PORT', 8080))  # Default to port 8080 if not specified
+    app.run(host='0.0.0.0', port=port, debug=True) 

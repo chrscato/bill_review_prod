@@ -1,0 +1,36 @@
+{% extends "base.html" %}
+
+{% block title %}Bill Review Portal{% endblock %}
+
+{% block content %}
+<div class="container mt-5">
+    <div class="row justify-content-center">
+        <div class="col-md-8 text-center">
+            <h1 class="display-4 mb-4">Bill Review Portal</h1>
+            <p class="lead mb-5">Welcome to the Bill Review Portal. Please select a section to continue.</p>
+            
+            <div class="row">
+                <div class="col-md-6 mb-4">
+                    <div class="card h-100">
+                        <div class="card-body">
+                            <h2 class="card-title">Mapping</h2>
+                            <p class="card-text">Access the mapping tools to manage and configure bill review mappings.</p>
+                            <a href="{{ url_for('mapping_home') }}" class="btn btn-primary">Go to Mapping</a>
+                        </div>
+                    </div>
+                </div>
+                
+                <div class="col-md-6 mb-4">
+                    <div class="card h-100">
+                        <div class="card-body">
+                            <h2 class="card-title">Processing</h2>
+                            <p class="card-text">Access the processing tools to review and process bills.</p>
+                            <a href="{{ url_for('processing_home') }}" class="btn btn-primary">Go to Processing</a>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %} 

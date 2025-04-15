@@ -35,32 +35,41 @@
             
             <!-- Navigation -->
             <div class="nav-container">
-                <a href="/" class="btn btn-outline-light {% if request.path == '/' %}active-page{% endif %}">
-                    All Issues
+                <!-- Home -->
+                <a href="{{ url_for('portal_home') }}" class="btn btn-outline-light {% if request.path == '/' %}active-page{% endif %}">
+                    Home
                 </a>
-                <a href="/dashboard" class="btn btn-outline-light {% if request.path == '/dashboard' %}active-page{% endif %}">
-                    Dashboard
-                </a>
-                <a href="/unauthorized" class="btn btn-outline-light {% if request.path == '/unauthorized' %}active-page{% endif %}">
-                    Unauthorized Services
-                </a>
-                <a href="/non-global" class="btn btn-outline-light {% if request.path == '/non-global' %}active-page{% endif %}">
-                    Non-Global Bills
-                </a>
-                <a href="/rate-corrections" class="btn btn-outline-light {% if request.path == '/rate-corrections' %}active-page{% endif %}">
-                    Rate Issues
-                </a>
-                <a href="/ota" class="btn btn-outline-light {% if request.path == '/ota' %}active-page{% endif %}">
-                    OTA
-                </a>
-                <a href="/escalations" class="btn btn-outline-light {% if request.path == '/escalations' %}active-page{% endif %}">
-                    Escalations
-                </a>
+
+                <!-- Mapping Dropdown -->
+                <div class="dropdown d-inline-block">
+                    <button class="btn btn-outline-light dropdown-toggle" type="button" id="mappingDropdown" data-bs-toggle="dropdown" aria-expanded="false">
+                        Mapping
+                    </button>
+                    <ul class="dropdown-menu" aria-labelledby="mappingDropdown">
+                        <li><a class="dropdown-item {% if request.path == '/mapping' %}active{% endif %}" href="{{ url_for('mapping_home') }}">Mapping Home</a></li>
+                        <li><a class="dropdown-item {% if request.path == '/mapping/unmapped' %}active{% endif %}" href="{{ url_for('mapping.unmapped') }}">Unmapped Items</a></li>
+                        <li><a class="dropdown-item {% if request.path == '/mapping/corrections' %}active{% endif %}" href="{{ url_for('mapping.corrections') }}">OCR Corrections</a></li>
+                    </ul>
+                </div>
+
+                <!-- Processing Dropdown -->
+                <div class="dropdown d-inline-block">
+                    <button class="btn btn-outline-light dropdown-toggle" type="button" id="processingDropdown" data-bs-toggle="dropdown" aria-expanded="false">
+                        Processing
+                    </button>
+                    <ul class="dropdown-menu" aria-labelledby="processingDropdown">
+                        <li><a class="dropdown-item {% if request.path == '/processing' %}active{% endif %}" href="{{ url_for('processing_home') }}">Processing Home</a></li>
+                        <li><a class="dropdown-item {% if request.path == '/unauthorized' %}active{% endif %}" href="/unauthorized">Unauthorized Services</a></li>
+                        <li><a class="dropdown-item {% if request.path == '/non-global' %}active{% endif %}" href="/non-global">Non-Global Bills</a></li>
+                        <li><a class="dropdown-item {% if request.path == '/rate-corrections' %}active{% endif %}" href="/rate-corrections">Rate Issues</a></li>
+                        <li><a class="dropdown-item {% if request.path == '/ota' %}active{% endif %}" href="/ota">OTA</a></li>
+                        <li><a class="dropdown-item {% if request.path == '/escalations' %}active{% endif %}" href="/escalations">Escalations</a></li>
+                    </ul>
+                </div>
+
+                <!-- Additional Links -->
                 <a href="/instructions" class="btn btn-outline-light {% if request.path == '/instructions' %}active-page{% endif %}">
                     Instructions
-                </a>
-                <a href="/medical-records" class="btn btn-outline-light {% if request.path == '/medical-records' %}active-page{% endif %}">
-                    Medical Records
                 </a>
             </div>
         </div>
