@@ -13,6 +13,7 @@
 <select id="statusFilter" class="form-select form-select-sm">
     <option value="all">All Types</option>
 </select>
+<button id="denyButton" class="btn btn-danger btn-sm ms-2" disabled>Deny</button>
 {% endblock %}
 
 {% block content %}
@@ -200,15 +201,43 @@
         </div>
     </div>
 </div>
+
+<!-- Denial Modal -->
+<div class="modal fade" id="denialModal" tabindex="-1" aria-labelledby="denialModalLabel" aria-hidden="true">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title" id="denialModalLabel">Deny Bill</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body">
+                <div class="mb-3">
+                    <label for="denialReason" class="form-label">Select Denial Reason</label>
+                    <select class="form-select" id="denialReason">
+                        <option value="">Select a reason...</option>
+                        <option value="medical necessity CO-50">Medical Necessity CO-50</option>
+                        <option value="claim not found in FileMaker">Claim Not Found in FileMaker</option>
+                    </select>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                <button type="button" class="btn btn-danger" id="confirmDenial">Confirm Denial</button>
+            </div>
+        </div>
+    </div>
+</div>
 {% endblock %}
 
 {% block extra_scripts %}
 <!-- Load our escalations code before main.js -->
 <script>
   // Initialize global variables
-  window.currentDocument = null;
-  window.allFailures = [];
-  window.uniqueFailureTypes = new Set();
+  window.escalations = {
+    currentDocument: null,
+    allFailures: [],
+    uniqueFailureTypes: new Set()
+  };
 
   // Function to load escalations
   function loadEscalations(filterType = 'all') {
@@ -239,30 +268,30 @@
           }
           
           // Store all escalations
-          window.allFailures = result.data;
+          window.escalations.allFailures = result.data;
           console.log('Stored escalations:', {
-            totalEscalations: window.allFailures.length,
-            sampleEscalation: window.allFailures.length > 0 ? {
-              filename: window.allFailures[0].filename,
-              hasValidationMessages: Boolean(window.allFailures[0].validation_messages),
-              validationMessages: window.allFailures[0].validation_messages
+            totalEscalations: window.escalations.allFailures.length,
+            sampleEscalation: window.escalations.allFailures.length > 0 ? {
+              filename: window.escalations.allFailures[0].filename,
+              hasValidationMessages: Boolean(window.escalations.allFailures[0].validation_messages),
+              validationMessages: window.escalations.allFailures[0].validation_messages
             } : null
           });
           
           // Extract unique failure types
-          window.uniqueFailureTypes.clear();
-          window.allFailures.forEach(failure => {
+          window.escalations.uniqueFailureTypes.clear();
+          window.escalations.allFailures.forEach(failure => {
             const types = extractFailureTypes(failure);
-            types.forEach(type => window.uniqueFailureTypes.add(type));
+            types.forEach(type => window.escalations.uniqueFailureTypes.add(type));
           });
-          console.log('Unique failure types:', Array.from(window.uniqueFailureTypes));
+          console.log('Unique failure types:', Array.from(window.escalations.uniqueFailureTypes));
           
           // Update status filter dropdown based on the page type
-          updateStatusFilter(window.allFailures, filterType);
+          updateStatusFilter(window.escalations.allFailures, filterType);
           
           // Apply current filter
           const statusFilter = document.getElementById('statusFilter');
-          const filteredFailures = filterFailuresByStatus(window.allFailures, statusFilter.value);
+          const filteredFailures = filterFailuresByStatus(window.escalations.allFailures, statusFilter.value);
           console.log('Filtered escalations:', {
             filterType: statusFilter.value,
             totalFiltered: filteredFailures.length
@@ -324,7 +353,7 @@
         document.getElementById('dbDetails').innerHTML = '';
         
         // Remove from currentDocument
-        window.currentDocument = null;
+        window.escalations.currentDocument = null;
       })
       .catch(error => {
         console.error('Error resolving escalated bill:', error);
@@ -340,20 +369,90 @@
     }
   }
 
-  // Override functions that will be used by main.js
-  window.loadFailures = loadEscalations;
-  window.resolveBill = resolveEscalatedBill;
+  // Function to handle denial
+  function handleDenial(filename) {
+    const reason = document.getElementById('denialReason').value;
+    if (!reason) {
+        alert('Please provide a reason for denial');
+        return;
+    }
+
+    // Show loading indicator
+    const loadingIndicator = document.getElementById('loadingIndicator');
+    loadingIndicator.style.display = 'block';
+
+    fetch('/api/escalations/deny', {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ filename, reason })
+    })
+    .then(response => {
+        if (!response.ok) {
+            throw new Error(`HTTP error! status: ${response.status}`);
+        }
+        return response.json();
+    })
+    .then(data => {
+        if (data.success) {
+            // Close the modal
+            const modal = document.getElementById('denyModal');
+            modal.style.display = 'none';
+            
+            // Clear the reason input
+            document.getElementById('denialReason').value = '';
+            
+            // Refresh the escalations list
+            fetchEscalations();
+        } else {
+            throw new Error(data.error || 'Failed to deny bill');
+        }
+    })
+    .catch(error => {
+        console.error('Error denying bill:', error);
+        alert('Error denying bill: ' + error.message);
+    })
+    .finally(() => {
+        // Hide loading indicator
+        loadingIndicator.style.display = 'none';
+    });
+  }
+
+  // Setup event listeners for denial functionality
+  document.addEventListener('DOMContentLoaded', function() {
+    const denyButton = document.getElementById('denyButton');
+    if (denyButton) {
+      denyButton.addEventListener('click', function() {
+        const modal = new bootstrap.Modal(document.getElementById('denialModal'));
+        modal.show();
+      });
+    }
+
+    const confirmDenialButton = document.getElementById('confirmDenial');
+    if (confirmDenialButton) {
+      confirmDenialButton.addEventListener('click', function() {
+        handleDenial(window.escalations.currentDocument.filename);
+      });
+    }
+  });
 
   window.selectDocument = async function(doc) {
     try {
       showLoading();
-      window.currentDocument = doc;
+      window.escalations.currentDocument = doc;
       
       // Update active state in document list
       document.querySelectorAll('.document-item').forEach(item => {
         item.classList.remove('active');
       });
       event.currentTarget.classList.add('active');
+      
+      // Enable the deny button
+      const denyButton = document.getElementById('denyButton');
+      if (denyButton) {
+        denyButton.disabled = false;
+      }
       
       // Fetch document details
       const [jsonResponse, dbResponse] = await Promise.all([
@@ -476,6 +575,10 @@
     }
   };
 
+  // Override functions that will be used by main.js
+  window.loadFailures = loadEscalations;
+  window.resolveBill = resolveEscalatedBill;
+
   // Initialize the page
   console.log('Initializing escalations page...');
   loadEscalations();
@@ -484,7 +587,4 @@
 <!-- Load rate correction and OTA scripts -->
 <script src="{{ url_for('static', filename='js/rate_correction.js') }}"></script>
 <script src="{{ url_for('static', filename='js/ota_correction.js') }}"></script>
-
-<!-- Load main.js last -->
-<script src="{{ url_for('static', filename='js/main.js') }}"></script>
 {% endblock %} 

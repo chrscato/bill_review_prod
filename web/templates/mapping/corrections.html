@@ -11,8 +11,14 @@
     <!-- Left panel: File list -->
     <div class="col-md-3">
         <div class="card">
-            <div class="card-header">Files Needing Correction</div>
+            <div class="card-header d-flex justify-content-between align-items-center">
+                <span>Files Needing Correction</span>
+                <button id="debugBtn" class="btn btn-sm btn-outline-secondary">Debug Paths</button>
+            </div>
             <div class="card-body file-list p-0">
+                <div id="fileInfo" class="alert alert-info mb-2">
+                    <!-- File info will be shown here -->
+                </div>
                 <div class="list-group" id="fileList">
                     <!-- Files will be listed here -->
                 </div>
@@ -20,10 +26,13 @@
         </div>
     </div>
     
-    <!-- Middle panel: Record details and PDF viewer -->
+    <!-- Middle panel: Record details -->
     <div class="col-md-5">
         <div class="card mb-3">
-            <div class="card-header">Record Details</div>
+            <div class="card-header d-flex justify-content-between align-items-center">
+                <span>Record Details</span>
+                <button id="addLineBtn" class="btn btn-sm btn-outline-primary">Add Line Item</button>
+            </div>
             <div class="card-body">
                 <div id="recordDetails">
                     <div class="alert alert-info">Select a file to review</div>
@@ -63,7 +72,10 @@
     <!-- Right panel: PDF viewer -->
     <div class="col-md-4">
         <div class="card">
-            <div class="card-header">PDF Viewer</div>
+            <div class="card-header d-flex justify-content-between align-items-center">
+                <span>PDF Viewer</span>
+                <button id="openPdfBtn" class="btn btn-sm btn-outline-primary">Open Full PDF</button>
+            </div>
             <div class="card-body">
                 <ul class="nav nav-tabs mb-3" id="pdfTabs">
                     <li class="nav-item">
@@ -81,19 +93,26 @@
                         <iframe id="pdfFrame" class="pdf-viewer" src="about:blank"></iframe>
                     </div>
                     <div class="tab-pane fade" id="headerRegion">
-                        <img id="headerImage" class="region-image" src="" alt="Header region">
+                        <div class="pdf-region header">
+                            <iframe src="about:blank"></iframe>
+                        </div>
                     </div>
                     <div class="tab-pane fade" id="serviceRegion">
-                        <img id="serviceImage" class="region-image" src="" alt="Service lines region">
+                        <div class="pdf-region service-lines">
+                            <iframe src="about:blank"></iframe>
+                        </div>
                     </div>
                 </div>
             </div>
         </div>
     </div>
 </div>
+
+<!-- Alert Container -->
+<div id="alertContainer" class="position-fixed top-0 end-0 p-3" style="z-index: 5"></div>
 {% endblock %}
 
-{% block scripts %}
+{% block extra_scripts %}
 <script src="{{ url_for('static', filename='mapping/js/corrections/main.js') }}"></script>
 <script src="{{ url_for('static', filename='mapping/js/corrections/editor.js') }}"></script>
 {% endblock %} 

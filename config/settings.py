@@ -32,6 +32,7 @@ class Settings:
     SUCCESS_PATH = SUCCESS_DIR
     FAILS_PATH = FAILS_DIR
     ESCALATE_PATH = JSON_DIR / "escalate"  # New directory for escalated bills
+    ARTHROGRAM_PATH = JSON_DIR / "arthrogram"  # Directory for ARTHROGRAM files
     DB_PATH = DB_PATH
     LOG_PATH = Path(r"C:\Users\ChristopherCato\OneDrive - clarity-dx.com\Documents\Bill_Review_INTERNAL\validation logs")
     PDF_ARCHIVE_PATH = Path(r"C:\Users\ChristopherCato\OneDrive - clarity-dx.com\Documents\Bill_Review_INTERNAL\scripts\VAILIDATION\data\pdf\archive")
@@ -61,6 +62,17 @@ class Settings:
     # System options
     DEBUG = DEBUG
     THREADS = 1  # Number of processing threads (1 = single-threaded)
+
+    def __init__(self):
+        """Initialize settings with proper path handling."""
+        # Ensure all paths exist
+        self.JSON_PATH.mkdir(exist_ok=True, parents=True)
+        self.SUCCESS_PATH.mkdir(exist_ok=True, parents=True)
+        self.FAILS_PATH.mkdir(exist_ok=True, parents=True)
+        self.ESCALATE_PATH.mkdir(exist_ok=True, parents=True)
+        self.ARTHROGRAM_PATH.mkdir(exist_ok=True, parents=True)
+        self.LOG_PATH.mkdir(exist_ok=True, parents=True)
+        self.PDF_ARCHIVE_PATH.mkdir(exist_ok=True, parents=True)
 
 # Create a single settings instance
 settings = Settings()

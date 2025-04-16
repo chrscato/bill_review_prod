@@ -49,13 +49,20 @@ function performSearch() {
             'Content-Type': 'application/json'
         },
         body: JSON.stringify({
-            first_name: firstName,
-            last_name: lastName,
-            dos_date: dos,
-            months_range: monthsRange
+            firstName: firstName,
+            lastName: lastName,
+            dos: dos,
+            monthsRange: parseInt(monthsRange) || 0
         })
     })
-    .then(response => response.json())
+    .then(response => {
+        if (!response.ok) {
+            return response.json().then(data => {
+                throw new Error(data.error || 'Search failed');
+            });
+        }
+        return response.json();
+    })
     .then(data => {
         if (data.error) {
             showSearchStatus(data.error, 'danger');
@@ -66,7 +73,7 @@ function performSearch() {
     })
     .catch(error => {
         console.error('Error performing search:', error);
-        showSearchStatus('Error performing search', 'danger');
+        showSearchStatus(error.message || 'Error performing search', 'danger');
     });
 }
 
@@ -97,29 +104,18 @@ function displaySearchResults(results) {
         matchItem.innerHTML = `
             <div class="d-flex justify-content-between align-items-center">
                 <div>
-                    <strong>${result.patient_name}</strong><br>
-                    <small class="text-muted">DOB: ${result.date_of_birth}</small>
+                    <strong>${result.first_name} ${result.last_name}</strong><br>
+                    <small class="text-muted">
+                        DOS: ${result.date_of_service}<br>
+                        Provider: ${result.provider_name}<br>
+                        Total Charges: $${result.total_charges}
+                    </small>
                 </div>
-                <div class="text-end">
-                    <small class="text-muted">Order ID: ${result.order_id}</small><br>
-                    <small class="text-muted">FileMaker: ${result.filemaker_id}</small>
-                </div>
+                <button class="btn btn-sm btn-primary" onclick="selectMatch('${result.order_id}')">
+                    Select
+                </button>
             </div>
         `;
-        
-        // Add click handler
-        matchItem.addEventListener('click', () => {
-            // Update form fields
-            document.getElementById('orderIdInput').value = result.order_id;
-            document.getElementById('filemakerInput').value = result.filemaker_id;
-            
-            // Update selected state
-            document.querySelectorAll('.match-item').forEach(item => {
-                item.classList.remove('selected');
-            });
-            matchItem.classList.add('selected');
-        });
-        
         matchResults.appendChild(matchItem);
     });
 }

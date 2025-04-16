@@ -15,6 +15,8 @@ from web.routes.rate_routes import rate_bp  # Import the rate routes blueprint
 from web.routes.ota_routes import ota_bp
 from werkzeug.middleware.proxy_fix import ProxyFix  # Add this import
 from web.routes.mapping_routes import mapping_bp
+import shutil
+import re
 
 app = Flask(__name__)
 CORS(app)  # Enable CORS for all routes
@@ -910,6 +912,68 @@ def get_escalation(filename):
             'status': 'error',
             'message': str(e)
         }), 500
+
+def validate_filename(filename):
+    """Validate and sanitize a filename."""
+    # Remove any path components
+    filename = Path(filename).name
+    
+    # Only allow alphanumeric characters, underscores, hyphens, and dots
+    if not re.match(r'^[\w\-\.]+$', filename):
+        raise ValueError('Invalid filename')
+        
+    return filename
+
+@app.route('/api/escalations/deny', methods=['POST'])
+def deny_escalation():
+    try:
+        data = request.get_json()
+        if not data or 'filename' not in data or 'reason' not in data:
+            return jsonify({'error': 'Missing required fields'}), 400
+
+        filename = data['filename']
+        reason = data['reason']
+
+        # Validate filename
+        try:
+            filename = validate_filename(filename)
+        except ValueError as e:
+            return jsonify({'error': str(e)}), 400
+
+        # Define source and destination paths
+        source_path = Path(app.config['ESCALATE_PATH']) / filename
+        dest_path = Path(app.config['ESCALATE_PATH']).parent / 'denials' / filename
+        staging_path = Path(app.config['JSON_PATH']) / filename
+
+        # Check if source file exists
+        if not source_path.exists():
+            return jsonify({'error': f'Source file not found: {source_path}'}), 404
+
+        # Read the current file content
+        with open(source_path, 'r') as f:
+            file_data = json.load(f)
+
+        # Add denial information
+        file_data['denial_reason'] = reason
+        file_data['denied_at'] = datetime.now().isoformat()
+        file_data['status'] = 'denied'
+
+        # Ensure destination directory exists and write the updated data
+        dest_path.parent.mkdir(exist_ok=True)
+        with open(dest_path, 'w') as f:
+            json.dump(file_data, f, indent=2)
+
+        # Delete the source file
+        source_path.unlink()
+
+        # Delete from staging if it exists
+        if staging_path.exists():
+            staging_path.unlink()
+
+        return jsonify({'success': True, 'message': 'Bill denied successfully'})
+
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
 
 # @app.route('/medical-records')
 # def medical_records():

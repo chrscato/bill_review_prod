@@ -10,7 +10,15 @@ let currentFileIndex = 0;
 
 document.addEventListener('DOMContentLoaded', function() {
     loadFiles();
-    setupEventListeners();
+    debugPaths();
+    
+    // Add event listeners
+    document.getElementById('debugBtn').addEventListener('click', debugPaths);
+    document.getElementById('openPdfBtn').addEventListener('click', openPDF);
+    document.getElementById('addLineBtn').addEventListener('click', addLineItem);
+    document.getElementById('prevButton').addEventListener('click', loadPrevious);
+    document.getElementById('nextButton').addEventListener('click', loadNext);
+    document.getElementById('saveButton').addEventListener('click', saveChanges);
 });
 
 /**
@@ -18,8 +26,11 @@ document.addEventListener('DOMContentLoaded', function() {
  */
 async function loadFiles() {
     try {
+        console.log('Loading files from /mapping/api/corrections/files');
         const response = await fetch('/mapping/api/corrections/files');
         const data = await response.json();
+        console.log('API Response:', data);
+        
         const fileList = document.getElementById('fileList');
         fileList.innerHTML = '';
 
@@ -196,37 +207,17 @@ function updateServiceLine(index, field, value) {
  * @param {string} filename - Name of the file to load
  */
 function loadPDF(filename) {
+    // Get the PDF URL
+    const pdfUrl = `/mapping/api/corrections/pdf/${filename}`;
+    
     // Load the full PDF
-    const pdfFrame = document.getElementById('pdfFrame');
-    pdfFrame.src = `/mapping/api/corrections/pdf/${filename}`;
+    document.getElementById('pdfFrame').src = pdfUrl;
     
     // Load the header region
-    loadPDFRegion(filename, 'header', 'headerImage');
+    document.querySelector('#headerRegion .pdf-region iframe').src = pdfUrl;
     
     // Load the service lines region
-    loadPDFRegion(filename, 'service_lines', 'serviceImage');
-}
-
-/**
- * Load a specific region of a PDF
- * @param {string} filename - Name of the file to load
- * @param {string} region - Region name (header, service_lines)
- * @param {string} imgId - ID of the image element to update
- */
-async function loadPDFRegion(filename, region, imgId) {
-    try {
-        const response = await fetch(`/mapping/api/corrections/pdf_region/${filename}/${region}`);
-        const data = await response.json();
-        
-        if (data.image) {
-            const imgElement = document.getElementById(imgId);
-            if (imgElement) {
-                imgElement.src = data.image;
-            }
-        }
-    } catch (error) {
-        console.error(`Error loading ${region} PDF region:`, error);
-    }
+    document.querySelector('#serviceRegion .pdf-region iframe').src = pdfUrl;
 }
 
 /**
@@ -315,35 +306,120 @@ async function saveChanges() {
 }
 
 /**
- * Setup event listeners
+ * Open the full PDF in a new window
  */
-function setupEventListeners() {
-    // Navigation buttons
-    document.getElementById('prevButton').addEventListener('click', loadPrevious);
-    document.getElementById('nextButton').addEventListener('click', loadNext);
+function openPDF() {
+    if (!currentData) return;
+    window.open(`/mapping/api/corrections/pdf/${files[currentFileIndex]}`, '_blank');
+}
+
+/**
+ * Add a new line item
+ */
+function addLineItem() {
+    if (!currentData) return;
     
-    // Save button
-    document.getElementById('saveButton').addEventListener('click', saveChanges);
+    if (!currentData.service_lines) {
+        currentData.service_lines = [];
+    }
     
-    // Form field updates
-    document.getElementById('patientName').addEventListener('change', (e) => {
-        if (!currentData.patient_info) {
-            currentData.patient_info = {};
-        }
-        currentData.patient_info.patient_name = e.target.value;
+    currentData.service_lines.push({
+        cpt_code: '',
+        units: ''
     });
     
-    document.getElementById('patientDOB').addEventListener('change', (e) => {
-        if (!currentData.patient_info) {
-            currentData.patient_info = {};
-        }
-        currentData.patient_info.patient_dob = e.target.value;
-    });
+    displayData();
+}
+
+/**
+ * Remove a line item
+ * @param {number} index - Index of line item to remove
+ */
+function removeLineItem(index) {
+    if (!currentData || !currentData.service_lines) return;
     
-    document.getElementById('patientZip').addEventListener('change', (e) => {
-        if (!currentData.patient_info) {
-            currentData.patient_info = {};
-        }
-        currentData.patient_info.patient_zip = e.target.value;
-    });
+    currentData.service_lines.splice(index, 1);
+    displayData();
+}
+
+/**
+ * Update a field in the current data
+ * @param {string} field - Field name to update
+ * @param {string} value - New value
+ */
+function updateField(field, value) {
+    if (!currentData) return;
+    currentData[field] = value;
+}
+
+/**
+ * Update a line item field
+ * @param {number} index - Index of line item
+ * @param {string} field - Field name to update
+ * @param {string} value - New value
+ */
+function updateLineItem(index, field, value) {
+    if (!currentData || !currentData.service_lines) return;
+    
+    if (field === 'units') {
+        value = parseInt(value) || 0;
+    }
+    
+    currentData.service_lines[index][field] = value;
+}
+
+/**
+ * Update the file info display
+ */
+function updateFileInfo() {
+    const fileInfo = document.getElementById('fileInfo');
+    const remaining = files.length - currentFileIndex - 1;
+    
+    if (files.length === 0) {
+        fileInfo.innerHTML = 'No files to correct';
+    } else {
+        fileInfo.innerHTML = `
+            <strong>${remaining}</strong> file${remaining !== 1 ? 's' : ''} remaining
+            <br>
+            <small>Current: ${files[currentFileIndex]}</small>
+        `;
+    }
+}
+
+/**
+ * Debug function to show file paths
+ */
+async function debugPaths() {
+    try {
+        const response = await fetch('/mapping/api/corrections/debug');
+        const data = await response.json();
+        
+        console.log('Debug paths:', data);
+        showAlert('Debug paths logged to console', 'info');
+    } catch (error) {
+        console.error('Error getting debug paths:', error);
+        showAlert('Error getting debug paths', 'danger');
+    }
+}
+
+/**
+ * Show an alert message
+ * @param {string} message - Message to display
+ * @param {string} type - Alert type (success, danger, etc.)
+ * @param {number} duration - Duration in milliseconds
+ */
+function showAlert(message, type = 'success', duration = 3000) {
+    const alertContainer = document.getElementById('alertContainer');
+    const alert = document.createElement('div');
+    alert.className = `alert alert-${type} alert-dismissible fade show`;
+    alert.innerHTML = `
+        ${message}
+        <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+    `;
+    
+    alertContainer.appendChild(alert);
+    
+    setTimeout(() => {
+        alert.remove();
+    }, duration);
 } 

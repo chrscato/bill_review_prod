@@ -634,46 +634,34 @@ async function resolveBill(failure) {
         showLoading();
         const filename = failure.filename;
         
-        fetch(`/api/failures/${filename}/resolve`, {
+        const response = await fetch(`/api/failures/${filename}/resolve`, {
             method: 'POST',
             headers: {
                 'Content-Type': 'application/json'
             }
-        })
-        .then(response => {
-            if (!response.ok) {
-                return response.json().then(data => {
-                    throw new Error(data.message || `HTTP error! status: ${response.status}`);
-                });
-            }
-            return response.json();
-        })
-        .then(result => {
-            showSuccess('Bill has been resolved and moved to staging');
-            
-            // Remove the failure from the document list
-            const failureElement = document.querySelector(`.document-item[data-filename="${filename}"]`);
-            if (failureElement) {
-                failureElement.remove();
-            }
-            
-            // Clear the details panels
-            document.getElementById('hcfaDetails').innerHTML = '<div class="alert alert-success">Bill has been resolved and moved to staging.</div>';
-            document.getElementById('dbDetails').innerHTML = '';
-            
-            // Remove from currentDocument
-            currentDocument = null;
-        })
-        .catch(error => {
-            console.error('Error resolving bill:', error);
-            showError(`Failed to resolve bill: ${error.message}`);
-        })
-        .finally(() => {
-            hideLoading();
         });
+
+        if (!response.ok) {
+            const data = await response.json();
+            throw new Error(data.message || `HTTP error! status: ${response.status}`);
+        }
+
+        const result = await response.json();
+        showSuccess('Bill has been resolved and moved to staging');
+        
+        // Clear the details panels
+        clearDetailsPanels();
+        
+        // Reload the failures list to reflect the changes
+        const statusFilter = document.getElementById('statusFilter');
+        const currentFilter = statusFilter ? statusFilter.value : 'all';
+        
+        // Force a refresh of the current view
+        await loadFailures(currentFilter);
     } catch (error) {
         console.error('Error resolving bill:', error);
         showError(`Failed to resolve bill: ${error.message}`);
+    } finally {
         hideLoading();
     }
 }
@@ -736,8 +724,10 @@ async function escalateBill(failureData) {
 
         // Reload the failures list to reflect the changes
         const statusFilter = document.getElementById('statusFilter');
-        await loadFailures(statusFilter ? statusFilter.value : 'all');
-
+        const currentFilter = statusFilter ? statusFilter.value : 'all';
+        
+        // Force a refresh of the current view
+        await loadFailures(currentFilter);
     } catch (error) {
         console.error('Error escalating bill:', error);
         showError('Error escalating bill: ' + error.message);
@@ -745,6 +735,76 @@ async function escalateBill(failureData) {
         // Hide loading indicators
         if (loadingIndicator) loadingIndicator.style.display = 'none';
         if (escalateButton) escalateButton.disabled = false;
+    }
+}
+
+/**
+ * Deny a bill with a specific reason
+ * @param {Object} failureData - The failure data object
+ */
+async function denyBill(failureData) {
+    if (!failureData || !failureData.filename) {
+        console.error('Invalid failure data provided to denyBill');
+        return;
+    }
+
+    const filename = failureData.filename;
+    const reason = document.getElementById('denialReason').value;
+    
+    if (!reason) {
+        showAlert('Please select a denial reason', 'warning');
+        return;
+    }
+
+    // Show loading indicators
+    const loadingIndicator = document.getElementById('loading-indicator');
+    const denyButton = document.getElementById('denyButton');
+    if (loadingIndicator) loadingIndicator.style.display = 'block';
+    if (denyButton) denyButton.disabled = true;
+
+    try {
+        // Make the API call to deny the bill
+        const response = await fetch(`/api/escalations/deny`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({ 
+                filename: filename,
+                reason: reason,
+                source_type: 'escalations'
+            })
+        });
+
+        if (response.status === 404) {
+            throw new Error('This bill has already been denied or moved.');
+        }
+        if (!response.ok) {
+            throw new Error(`HTTP error! status: ${response.status}`);
+        }
+
+        const data = await response.json();
+        if (!data.success) {
+            throw new Error(data.error || 'Failed to deny bill');
+        }
+
+        // Clear the details panels
+        clearDetailsPanels();
+
+        // Show success message
+        showSuccess('Bill has been denied');
+
+        // Reload the failures list to reflect the changes
+        const statusFilter = document.getElementById('statusFilter');
+        await loadFailures(statusFilter ? statusFilter.value : 'all');
+
+    } catch (error) {
+        console.error('Error denying bill:', error);
+        showError('Error denying bill: ' + error.message);
+    } finally {
+        // Hide loading indicators
+        if (loadingIndicator) loadingIndicator.style.display = 'none';
+        if (denyButton) denyButton.disabled = false;
     }
 }
 
@@ -851,6 +911,26 @@ function setupEventListeners() {
             if (editAllButton) editAllButton.click();
         }
     });
+
+    // Add deny button event listeners
+    const denyButton = document.getElementById('denyButton');
+    if (denyButton) {
+        denyButton.addEventListener('click', function() {
+            const modal = new bootstrap.Modal(document.getElementById('denialModal'));
+            modal.show();
+        });
+    }
+
+    const confirmDenialButton = document.getElementById('confirmDenial');
+    if (confirmDenialButton) {
+        confirmDenialButton.addEventListener('click', function() {
+            if (window.escalations && window.escalations.currentDocument) {
+                handleDenial();
+            } else {
+                showError('No document selected');
+            }
+        });
+    }
 }
 
 // Load validation failures
@@ -1479,25 +1559,45 @@ function hideLoading() {
 
 // Error handling
 function showError(message) {
-    const alert = document.createElement('div');
-    alert.className = 'alert alert-danger alert-dismissible fade show';
-    alert.innerHTML = `
-        ${message}
-        <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
-    `;
-    document.querySelector('.container-fluid').insertBefore(alert, document.querySelector('.row'));
-    setTimeout(() => alert.remove(), 5000);
+    try {
+        const alert = document.createElement('div');
+        alert.className = 'alert alert-danger alert-dismissible fade show';
+        alert.innerHTML = `
+            ${message}
+            <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+        `;
+        
+        const container = document.querySelector('.container-fluid');
+        if (container) {
+            container.insertBefore(alert, container.firstChild);
+            setTimeout(() => alert.remove(), 5000);
+        } else {
+            console.error('Error: Could not find container for alert');
+        }
+    } catch (error) {
+        console.error('Error showing error message:', error);
+    }
 }
 
 function showSuccess(message) {
-    const alert = document.createElement('div');
-    alert.className = 'alert alert-success alert-dismissible fade show';
-    alert.innerHTML = `
-        ${message}
-        <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
-    `;
-    document.querySelector('.container-fluid').insertBefore(alert, document.querySelector('.row'));
-    setTimeout(() => alert.remove(), 5000);
+    try {
+        const alert = document.createElement('div');
+        alert.className = 'alert alert-success alert-dismissible fade show';
+        alert.innerHTML = `
+            ${message}
+            <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+        `;
+        
+        const container = document.querySelector('.container-fluid');
+        if (container) {
+            container.insertBefore(alert, container.firstChild);
+            setTimeout(() => alert.remove(), 5000);
+        } else {
+            console.error('Error: Could not find container for alert');
+        }
+    } catch (error) {
+        console.error('Error showing success message:', error);
+    }
 }
 
 // Function to extract unique failure types from validation messages

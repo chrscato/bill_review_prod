@@ -24,36 +24,53 @@
 /* PDF viewer styles */
 .pdf-viewer {
     width: 100%;
-    height: 500px;
-    border: 1px solid #dee2e6;
-    border-radius: 0.25rem;
+    height: 600px;
+    border: none;
 }
 
-.region-image {
-    max-width: 100%;
-    height: auto;
-    border: 1px solid #dee2e6;
-    border-radius: 0.25rem;
+.pdf-region {
+    position: relative;
+    width: 100%;
+    height: 600px;
+    overflow: hidden;
+    border: 1px solid #ddd;
+    background: white;
 }
 
-/* Service lines styles */
+.pdf-region iframe {
+    position: absolute;
+    width: 100%;
+    border: none;
+    background: white;
+}
+
+/* Header region shows top 25% */
+.pdf-region.header iframe {
+    height: 400%;
+    top: 0;
+}
+
+/* Service lines region shows middle section (25%-80%) */
+.pdf-region.service-lines iframe {
+    height: 200%;
+    top: -100%;
+}
+
 .service-line {
-    border: 1px solid #dee2e6;
-    border-radius: 0.25rem;
-    padding: 1rem;
     margin-bottom: 1rem;
+    padding: 1rem;
+    border: 1px solid #ddd;
+    border-radius: 4px;
 }
 
 .service-line-header {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
     margin-bottom: 1rem;
 }
 
 .service-line-title {
-    font-weight: 500;
     margin: 0;
+    font-size: 1.1rem;
+    color: #495057;
 }
 
 .service-line-actions {

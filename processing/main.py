@@ -50,9 +50,11 @@ class BillReviewApplication:
         # Initialize validation results storage
         self.validation_results = []
         
-        # Create success and fails directories if they don't exist
+        # Create success, fails, and arthrogram directories if they don't exist
         settings.SUCCESS_PATH.mkdir(exist_ok=True, parents=True)
         settings.FAILS_PATH.mkdir(exist_ok=True, parents=True)
+        settings.ARTHROGRAM_PATH = settings.JSON_PATH / "arthrogram"
+        settings.ARTHROGRAM_PATH.mkdir(exist_ok=True, parents=True)
     
     def _get_escalation_files(self) -> set:
         """
@@ -107,7 +109,7 @@ class BillReviewApplication:
             hcfa_data = normalize_hcfa_format(raw_hcfa_data)
             
             # Extract order ID from the JSON data
-            order_id = raw_hcfa_data.get('Order_ID')
+            order_id = raw_hcfa_data.get('Order_ID') or raw_hcfa_data.get('order_id')
             if not order_id:
                 raise ValueError(f"No Order_ID found in file: {file_path.name}")
             
@@ -118,6 +120,18 @@ class BillReviewApplication:
                 # Get provider info and full order details from database
                 provider_info = self.db_service.get_provider_details(order_id, conn)
                 order_details = self.db_service.get_full_details(order_id, conn)
+                
+                # Check if this is an ARTHROGRAM bundle
+                if order_details and order_details.get('order_details', {}).get('bundle_type') == 'ARTHROGRAM':
+                    # Move file to ARTHROGRAM directory
+                    arthrogram_path = Path(r"C:\Users\ChristopherCato\OneDrive - clarity-dx.com\Documents\Bill_Review_INTERNAL\scripts\VAILIDATION\data\extracts\valid\mapped\staging\arthrogram")
+                    arthrogram_path.mkdir(exist_ok=True, parents=True)
+                    target_path = arthrogram_path / file_path.name
+                    shutil.move(str(file_path), str(target_path))
+                    if not self.quiet:
+                        print(f"Moved ARTHROGRAM file to: {target_path}")
+                    return  # Exit processing for ARTHROGRAM files
+                
                 order_lines = self.db_service.get_line_items(order_id, conn)
                 
                 # Extract patient info from order details
