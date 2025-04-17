@@ -20,7 +20,7 @@ import os
 from core.services.normalizer import normalize_hcfa_format
 from web.routes import (
     portal_bp, rate_bp, ota_bp, mapping_bp, failure_bp,
-    dashboard_bp, escalation_bp, processing_bp, config_bp
+    dashboard_bp, escalation_bp, processing_bp, config_bp, order_bp
 )
 from werkzeug.middleware.proxy_fix import ProxyFix
 
@@ -47,6 +47,7 @@ app.register_blueprint(dashboard_bp, url_prefix='/dashboard')
 app.register_blueprint(escalation_bp, url_prefix='/api/escalations')
 app.register_blueprint(processing_bp, url_prefix='/processing')
 app.register_blueprint(config_bp, url_prefix='/config')
+app.register_blueprint(order_bp, url_prefix='/api/order')
 
 # Configure paths
 app.config['JSON_PATH'] = r"C:\Users\ChristopherCato\OneDrive - clarity-dx.com\Documents\Bill_Review_INTERNAL\scripts\VAILIDATION\data\extracts\valid\mapped\staging"

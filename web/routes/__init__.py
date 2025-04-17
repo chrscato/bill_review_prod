@@ -7,6 +7,7 @@ from .ota_routes import ota_bp
 from .escalation_routes import escalation_bp
 from .processing_routes import processing_bp
 from .config_routes import config_bp
+from .order_routes import order_bp
 
 __all__ = [
     'portal_bp',
@@ -17,5 +18,6 @@ __all__ = [
     'ota_bp',
     'escalation_bp',
     'processing_bp',
-    'config_bp'
+    'config_bp',
+    'order_bp'
 ] 
