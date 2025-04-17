@@ -17,6 +17,7 @@ from config.settings import settings
 from core.services.database import DatabaseService
 from core.services.normalizer import normalize_hcfa_format
 from core.services.reporter import ValidationReporter
+from core.services.arthrogram import ArthrogramService
 
 # Validators
 from core.validators.bundle_validator import BundleValidator
@@ -776,60 +777,67 @@ class BillReviewApplication:
             return debug_info
 
     def run(self, quiet: bool = False):
-        """
-        Main execution method to process all JSON files.
-        
-        Args:
-            quiet (bool): Whether to suppress output messages
-        """
+        """Run the main validation workflow."""
         self.quiet = quiet
         
-        with self.db_service.connect_db() as conn:
-            # Load reference data
-            dim_proc_df = pd.read_sql_query("SELECT * FROM dim_proc", conn)
-            
-            # Initialize code mapper
-            code_mapper = CodeMapper(settings.CLINICAL_EQUIV_CONFIG)
-            
-            # Initialize all validators
-            validators = {
-                'bundle': BundleValidator(),
-                'intent': ClinicalIntentValidator(),
-                'line_items': LineItemValidator(),
-                'modifier': ModifierValidator(),
-                'units': UnitsValidator(),
-                'rate': RateValidator(conn, quiet=self.quiet),
-                'cpt': CPTValidator()
-            }
-
-            # Check for files in the escalations folder
-            escalation_files = self._get_escalation_files()
-            
-            # Find all JSON files in the staging folder
-            json_files = list(Path(settings.JSON_PATH).glob('*.json'))
-            total_files = len(json_files)
-            skipped_files = 0
-            
-            # Process each file, skipping those that exist in the escalations folder
-            for index, json_file in enumerate(json_files, 1):
-                # Check if this file should be skipped
-                if json_file.name in escalation_files:
-                    if not quiet:
-                        print(f"Skipping {json_file.name} - already in escalations folder")
-                    skipped_files += 1
+        # Initialize validators
+        validators = {
+            'bundle': BundleValidator(),
+            'intent': ClinicalIntentValidator(),
+            'line_items': LineItemValidator(),
+            'rate': RateValidator(),
+            'modifier': ModifierValidator(),
+            'units': UnitsValidator(),
+            'cpt': CPTValidator()
+        }
+        
+        # First, process arthrograms
+        if not self.quiet:
+            print("\nProcessing arthrograms...")
+        arthrogram_service = ArthrogramService()
+        arthrogram_results = arthrogram_service.process_arthrogram_files()
+        if not self.quiet:
+            print(f"Arthrogram processing complete. Moved {len(arthrogram_results['moved_files'])} files.")
+        
+        # Get list of JSON files in staging directory
+        staging_files = list(settings.JSON_PATH.glob('*.json'))
+        if not staging_files:
+            if not self.quiet:
+                print("No files found in staging directory.")
+            return
+        
+        if not self.quiet:
+            print(f"\nFound {len(staging_files)} files to process")
+        
+        # Get escalation files
+        escalation_files = self._get_escalation_files()
+        
+        # Process each file
+        for file_path in staging_files:
+            try:
+                if not self.quiet:
+                    print(f"\nProcessing {file_path.name}...")
+                
+                # Skip if file is in escalations
+                if file_path.name in escalation_files:
+                    if not self.quiet:
+                        print(f"Skipping {file_path.name} - in escalations folder")
                     continue
                 
-                # Process the file normally
-                self.process_file(json_file, validators)
+                # Process the file
+                self.process_file(file_path, validators)
                 
-            if not quiet:
-                print(f"Processed {total_files - skipped_files} files, skipped {skipped_files} files.")
-            else:
-                # Always print summary stats even in quiet mode
-                print(f"Summary: Processed {total_files - skipped_files}, skipped {skipped_files}")
-
-        # Generate validation reports
+            except Exception as e:
+                if not self.quiet:
+                    print(f"Error processing {file_path.name}: {str(e)}")
+                    traceback.print_exc()
+                continue
+        
+        # Generate reports
         self.generate_reports()
+        
+        if not self.quiet:
+            print("\nProcessing complete!")
 
     def generate_reports(self):
         """
