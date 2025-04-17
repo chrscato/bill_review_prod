@@ -1,138 +1,130 @@
-import json
 from pathlib import Path
-from collections import defaultdict
-from core.services.database import DatabaseService
-from config.settings import settings
+import json
 import shutil
+from typing import Dict, List, Optional
+from core.services.database import DatabaseService
 from core.services.arthrogram_utils import ArthrogramUtils
+from core.settings import settings
 
 class ArthrogramService:
-    """Service for handling ARTHROGRAM files."""
+    """Service for processing ARTHROGRAM files."""
     
     def __init__(self):
-        """Initialize the Arthrogram Service."""
         self.db_service = DatabaseService()
         self.arthrogram_path = settings.ARTHROGRAM_PATH
         self.arthrogram_path.mkdir(exist_ok=True, parents=True)
     
-    def process_arthrogram_files(self) -> None:
-        """Process files in staging directory, moving ARTHROGRAM files to arthrogram directory."""
-        # Get all JSON files in staging
-        staging_files = list(settings.JSON_PATH.glob('*.json'))
-        print(f"\nTotal files in staging directory: {len(staging_files)}")
-        
-        # Connect to database
-        conn = self.db_service.connect_db()
-        
-        # Track counts by bundle type
-        bundle_counts = defaultdict(int)
-        errors = 0
+    def process_arthrogram_files(self) -> Dict:
+        """Process all files in staging directory for ARTHROGRAM identification."""
+        bundle_counts = {}
+        errors = []
         moved_files = []
         
         try:
-            for file_path in staging_files:
+            # Get all JSON files from staging
+            staging_path = settings.STAGING_PATH
+            json_files = list(staging_path.glob('*.json'))
+            
+            for file_path in json_files:
                 try:
-                    # Read JSON file
-                    with open(file_path, 'r', encoding='utf-8') as f:
+                    # Read JSON content
+                    with open(file_path, 'r') as f:
                         raw_data = json.load(f)
                     
-                    # Get order ID (check both cases)
-                    order_id = raw_data.get('Order_ID') or raw_data.get('order_id')
+                    # Get order ID
+                    order_id = raw_data.get('order_id')
                     if not order_id:
-                        bundle_counts['No Order_ID'] += 1
+                        errors.append(f"Missing order_id in {file_path.name}")
                         continue
                     
-                    # Check if JSON contains arthrogram
+                    # Check if JSON contains arthrogram codes
                     is_json_arthrogram = ArthrogramUtils.check_json_for_arthrogram(raw_data)
                     
                     # Get order details from database
-                    order_details = self.db_service.get_full_details(order_id, conn)
-                    if not order_details:
-                        bundle_counts['No DB Entry'] += 1
-                        continue
+                    with self.db_service.get_connection() as conn:
+                        is_order_arthrogram = self.is_arthrogram(order_id, conn)
                     
-                    # Get bundle type
-                    bundle_type = order_details.get('order_details', {}).get('bundle_type')
-                    category = bundle_type if bundle_type else 'No Bundle Type'
-                    bundle_counts[category] += 1
+                    # Add appropriate note to JSON
+                    if is_json_arthrogram and is_order_arthrogram:
+                        raw_data['arthrogram_note'] = 'arthrogram_providerbill_and_order'
+                    elif is_json_arthrogram:
+                        raw_data['arthrogram_note'] = 'arthrogram_providerbill'
+                    elif is_order_arthrogram:
+                        raw_data['arthrogram_note'] = 'arthrogram_order'
                     
-                    # Determine if order is arthrogram
-                    is_order_arthrogram = bundle_type == 'ARTHROGRAM'
+                    # Save updated JSON
+                    with open(file_path, 'w') as f:
+                        json.dump(raw_data, f, indent=2)
                     
-                    # Only process if it's an arthrogram (either from JSON or order)
+                    # Move file if it's an arthrogram
                     if is_json_arthrogram or is_order_arthrogram:
-                        # Add appropriate arthrogram note to JSON
-                        if is_json_arthrogram and is_order_arthrogram:
-                            raw_data['arthrogram_note'] = 'arthrogram_providerbill_and_order'
-                        elif is_json_arthrogram:
-                            raw_data['arthrogram_note'] = 'arthrogram_providerbill'
-                        else:  # is_order_arthrogram
-                            raw_data['arthrogram_note'] = 'arthrogram_order'
-                        
-                        # Save updated JSON
-                        with open(file_path, 'w', encoding='utf-8') as f:
-                            json.dump(raw_data, f, indent=4)
-                        
-                        # Move file to arthrogram directory
                         target_path = self.arthrogram_path / file_path.name
                         shutil.move(str(file_path), str(target_path))
                         moved_files.append({
-                            'file': file_path.name,
+                            'filename': file_path.name,
                             'order_id': order_id,
-                            'target_path': str(target_path),
-                            'note': raw_data['arthrogram_note']
+                            'note': raw_data['arthrogram_note'],
+                            'target_path': str(target_path)
                         })
                     
+                    # Track bundle type
+                    bundle_type = raw_data.get('bundle_type', 'unknown')
+                    bundle_counts[bundle_type] = bundle_counts.get(bundle_type, 0) + 1
+                    
                 except Exception as e:
-                    errors += 1
-                    print(f"Error processing {file_path.name}: {str(e)}")
+                    errors.append(f"Error processing {file_path.name}: {str(e)}")
                     continue
-        
-        finally:
-            conn.close()
-        
-        # Print summary
-        print("\nBundle Type Summary:")
-        print("-" * 50)
-        for bundle_type, count in sorted(bundle_counts.items()):
-            print(f"{bundle_type}: {count}")
-        print(f"Errors: {errors}")
-        print("-" * 50)
-        
-        # Print moved files summary
-        if moved_files:
-            print("\nMoved ARTHROGRAM files:")
-            print("-" * 50)
-            for move in moved_files:
-                print(f"File: {move['file']}")
-                print(f"Order ID: {move['order_id']}")
-                print(f"Note: {move['note']}")
-                print(f"Moved to: {move['target_path']}")
-                print("-" * 30)
-            print(f"\nTotal files moved: {len(moved_files)}")
-        else:
-            print("\nNo ARTHROGRAM files found to move.")
-        
-        return {
-            'total_files': len(staging_files),
-            'bundle_counts': dict(bundle_counts),
-            'errors': errors,
-            'moved_files': moved_files
-        }
+            
+            # Print summary
+            print("\nArthrogram Processing Summary:")
+            print(f"Total files processed: {len(json_files)}")
+            print("\nBundle Types:")
+            for bundle_type, count in bundle_counts.items():
+                print(f"  {bundle_type}: {count}")
+            print(f"\nErrors: {len(errors)}")
+            if errors:
+                print("\nError Details:")
+                for error in errors:
+                    print(f"  {error}")
+            print("\nMoved Files:")
+            for file_info in moved_files:
+                print(f"  {file_info['filename']} (Order ID: {file_info['order_id']})")
+                print(f"    Note: {file_info['note']}")
+                print(f"    Moved to: {file_info['target_path']}")
+            
+            return {
+                'total_files': len(json_files),
+                'bundle_counts': bundle_counts,
+                'errors': errors,
+                'moved_files': moved_files
+            }
+            
+        except Exception as e:
+            print(f"Error in process_arthrogram_files: {str(e)}")
+            raise
     
     def is_arthrogram(self, order_id: str, conn) -> bool:
         """Check if a given order_id is an ARTHROGRAM."""
-        order_details = self.db_service.get_full_details(order_id, conn)
-        if not order_details:
+        try:
+            with conn.cursor() as cursor:
+                cursor.execute("""
+                    SELECT bundle_type 
+                    FROM orders 
+                    WHERE order_id = %s
+                """, (order_id,))
+                result = cursor.fetchone()
+                return result and result[0] == 'ARTHROGRAM'
+        except Exception as e:
+            print(f"Error checking arthrogram status for order {order_id}: {str(e)}")
             return False
-        return order_details.get('order_details', {}).get('bundle_type') == 'ARTHROGRAM'
     
     def move_to_arthrogram(self, file_path: Path, order_id: str) -> bool:
         """Move a single file to the arthrogram directory."""
         try:
             target_path = self.arthrogram_path / file_path.name
             shutil.move(str(file_path), str(target_path))
+            print(f"Moved {file_path.name} to arthrogram directory")
             return True
         except Exception as e:
-            print(f"Error moving file {file_path.name}: {str(e)}")
+            print(f"Error moving {file_path.name}: {str(e)}")
             return False 
