@@ -1,3 +1,10 @@
+import sys
+from pathlib import Path
+
+# Add the project root to the Python path
+project_root = Path(__file__).parent.parent.absolute()
+sys.path.append(str(project_root))
+
 from flask import Flask, render_template, jsonify, request, send_from_directory, send_file, abort, redirect, url_for
 from pathlib import Path
 import json
@@ -7,7 +14,7 @@ from datetime import datetime
 from core.services.database import DatabaseService
 from core.services.hcfa import HCFAService
 from contextlib import contextmanager
-from config.settings import settings
+from core.config.settings import settings
 from flask_cors import CORS
 import os
 from core.services.normalizer import normalize_hcfa_format

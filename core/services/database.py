@@ -6,7 +6,7 @@ from typing import Dict, List, Optional, Any, Tuple, Set
 from pathlib import Path
 import json
 from datetime import datetime
-from config.settings import settings
+from core.config.settings import settings
 import logging
 
 logger = logging.getLogger(__name__)
