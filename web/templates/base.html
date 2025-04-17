@@ -117,7 +117,7 @@
             <!-- Navigation -->
             <div class="nav-container">
                 <!-- Home -->
-                <a href="{{ url_for('portal_home') }}" class="btn btn-outline-light {% if request.path == '/' %}active-page{% endif %}">
+                <a href="{{ url_for('portal.portal_home') }}" class="btn btn-outline-light {% if request.path == '/' %}active-page{% endif %}">
                     Home
                 </a>
 
@@ -127,7 +127,7 @@
                         Mapping
                     </button>
                     <ul class="dropdown-menu" aria-labelledby="mappingDropdown">
-                        <li><a class="dropdown-item {% if request.path == '/mapping' %}active{% endif %}" href="{{ url_for('mapping_home') }}">Mapping Home</a></li>
+                        <li><a class="dropdown-item {% if request.path == '/mapping' %}active{% endif %}" href="{{ url_for('mapping.mapping_home') }}">Mapping Home</a></li>
                         <li><a class="dropdown-item {% if request.path == '/mapping/unmapped' %}active{% endif %}" href="{{ url_for('mapping.unmapped') }}">Unmapped Items</a></li>
                         <li><a class="dropdown-item {% if request.path == '/mapping/corrections' %}active{% endif %}" href="{{ url_for('mapping.corrections') }}">OCR Corrections</a></li>
                     </ul>
@@ -139,18 +139,30 @@
                         Processing
                     </button>
                     <ul class="dropdown-menu" aria-labelledby="processingDropdown">
-                        <li><a class="dropdown-item {% if request.path == '/processing' %}active{% endif %}" href="{{ url_for('processing_home') }}">Processing Home</a></li>
-                        <li><a class="dropdown-item {% if request.path == '/unauthorized' %}active{% endif %}" href="/unauthorized">Unauthorized Services</a></li>
-                        <li><a class="dropdown-item {% if request.path == '/non-global' %}active{% endif %}" href="/non-global">Non-Global Bills</a></li>
-                        <li><a class="dropdown-item {% if request.path == '/rate-corrections' %}active{% endif %}" href="/rate-corrections">Rate Issues</a></li>
-                        <li><a class="dropdown-item {% if request.path == '/ota' %}active{% endif %}" href="/ota">OTA</a></li>
-                        <li><a class="dropdown-item {% if request.path == '/escalations' %}active{% endif %}" href="/escalations">Escalations</a></li>
+                        <li><a class="dropdown-item {% if request.path == '/processing/' %}active{% endif %}" href="{{ url_for('processing.processing_home') }}">Processing Home</a></li>
+                        <li><a class="dropdown-item {% if request.path == '/processing/unauthorized' %}active{% endif %}" href="{{ url_for('processing.unauthorized_services') }}">Unauthorized Services</a></li>
+                        <li><a class="dropdown-item {% if request.path == '/processing/non-global' %}active{% endif %}" href="{{ url_for('processing.non_global_bills') }}">Non-Global Bills</a></li>
+                        <li><a class="dropdown-item {% if request.path == '/processing/rate-corrections' %}active{% endif %}" href="{{ url_for('processing.rate_corrections') }}">Rate Issues</a></li>
+                        <li><a class="dropdown-item {% if request.path == '/processing/ota' %}active{% endif %}" href="{{ url_for('processing.ota_review') }}">OTA</a></li>
+                        <li><a class="dropdown-item {% if request.path == '/processing/escalations' %}active{% endif %}" href="{{ url_for('escalations.get_escalations') }}">Escalations</a></li>
                     </ul>
                 </div>
 
                 <!-- Additional Links -->
-                <a href="/instructions" class="btn btn-outline-light {% if request.path == '/instructions' %}active-page{% endif %}">
+                <a href="{{ url_for('instructions') }}" class="btn btn-outline-light {% if request.path == '/instructions' %}active-page{% endif %}">
                     Instructions
+                </a>
+                <a href="{{ url_for('process_detail', process='unauthorized') }}" class="btn btn-outline-light {% if request.path == '/instructions/unauthorized' %}active-page{% endif %}">
+                    Unauthorized Services
+                </a>
+                <a href="{{ url_for('process_detail', process='non-global') }}" class="btn btn-outline-light {% if request.path == '/instructions/non-global' %}active-page{% endif %}">
+                    Non-Global Bills
+                </a>
+                <a href="{{ url_for('process_detail', process='rate') }}" class="btn btn-outline-light {% if request.path == '/instructions/rate' %}active-page{% endif %}">
+                    Rate Issues
+                </a>
+                <a href="{{ url_for('process_detail', process='ota') }}" class="btn btn-outline-light {% if request.path == '/instructions/ota' %}active-page{% endif %}">
+                    OTA
                 </a>
             </div>
         </div>

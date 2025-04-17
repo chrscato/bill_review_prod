@@ -15,7 +15,7 @@
                         <div class="card-body">
                             <h2 class="card-title">Dashboard</h2>
                             <p class="card-text">View and manage your bill review dashboard.</p>
-                            <a href="{{ url_for('dashboard') }}" class="btn btn-primary">Go to Dashboard</a>
+                            <a href="{{ url_for('dashboard.dashboard') }}" class="btn btn-primary">Go to Dashboard</a>
                         </div>
                     </div>
                 </div>
@@ -37,7 +37,7 @@
                         <div class="card-body">
                             <h2 class="card-title">Unauthorized Services</h2>
                             <p class="card-text">Review and manage unauthorized services.</p>
-                            <a href="{{ url_for('unauthorized_services') }}" class="btn btn-primary">Go to Unauthorized Services</a>
+                            <a href="{{ url_for('processing.unauthorized_services') }}" class="btn btn-primary">Go to Unauthorized Services</a>
                         </div>
                     </div>
                 </div>
@@ -47,7 +47,7 @@
                         <div class="card-body">
                             <h2 class="card-title">Non-Global Bills</h2>
                             <p class="card-text">Manage non-global bill reviews.</p>
-                            <a href="{{ url_for('non_global_bills') }}" class="btn btn-primary">Go to Non-Global Bills</a>
+                            <a href="{{ url_for('processing.non_global_bills') }}" class="btn btn-primary">Go to Non-Global Bills</a>
                         </div>
                     </div>
                 </div>
@@ -59,7 +59,7 @@
                         <div class="card-body">
                             <h2 class="card-title">Rate Issues</h2>
                             <p class="card-text">Review and correct rate-related issues.</p>
-                            <a href="{{ url_for('rate_corrections') }}" class="btn btn-primary">Go to Rate Issues</a>
+                            <a href="{{ url_for('processing.rate_corrections') }}" class="btn btn-primary">Go to Rate Issues</a>
                         </div>
                     </div>
                 </div>
@@ -69,14 +69,14 @@
                         <div class="card-body">
                             <h2 class="card-title">Escalations</h2>
                             <p class="card-text">Manage bill review escalations and exceptions.</p>
-                            <a href="{{ url_for('escalations') }}" class="btn btn-primary">Go to Escalations</a>
+                            <a href="{{ url_for('escalations.get_escalations') }}" class="btn btn-primary">Go to Escalations</a>
                         </div>
                     </div>
                 </div>
             </div>
             
             <div class="mt-4">
-                <a href="{{ url_for('portal_home') }}" class="btn btn-outline-secondary">Back to Portal Home</a>
+                <a href="{{ url_for('portal.portal_home') }}" class="btn btn-outline-secondary">Back to Portal Home</a>
             </div>
         </div>
     </div>

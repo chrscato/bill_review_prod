@@ -21,6 +21,11 @@ db_service = DatabaseService()
 # Create blueprint
 mapping_bp = Blueprint('mapping', __name__)
 
+@mapping_bp.route('/')
+def mapping_home():
+    """Render the mapping home page."""
+    return render_template('mapping_home.html')
+
 def validate_filename(filename):
     """Validate and sanitize a filename."""
     # Remove any path components
