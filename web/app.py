@@ -271,6 +271,7 @@ def mapping_home():
     return render_template('mapping_home.html')
 
 @app.route('/processing')
+@app.route('/processing/')
 def processing_home():
     """Render the processing home page."""
     return render_template('processing_home.html')
